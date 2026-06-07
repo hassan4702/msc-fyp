@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Data & model weights — never commit datasets or checkpoints
+data/
+datasets/
+models/weights/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.h5
+
+# Participant / study data (sensitive — GDPR: keep webcam data off git entirely)
+study_data/
+*.mp4
+*.avi
+*.png
+*.jpg
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Env / secrets
+.env
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
