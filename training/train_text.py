@@ -12,10 +12,16 @@ Label index i == EMOTIONS[i], which is the ordering the backend wrapper assumes.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections import Counter
+from pathlib import Path
 
-from backend.emotions import EMOTIONS
-from training.goemotions import single_ekman_label
+# Allow running as a plain script (`python training/train_text.py`) by putting
+# the repo root on the path so `backend` and `training` are importable.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from backend.emotions import EMOTIONS  # noqa: E402
+from training.goemotions import single_ekman_label  # noqa: E402
 
 
 def _prepare(dataset, tokenizer, max_length: int):
@@ -35,7 +41,12 @@ def _prepare(dataset, tokenizer, max_length: int):
     def tokenize(batch):
         return tokenizer(batch["text"], truncation=True, max_length=max_length)
 
-    return dataset.map(tokenize, batched=True)
+    dataset = dataset.map(tokenize, batched=True)
+    # Drop everything except the model inputs + our single int label, otherwise the
+    # collator tries to tensorize GoEmotions' original variable-length `labels` list.
+    keep = {"input_ids", "attention_mask", "label"}
+    drop = [c for c in dataset["train"].column_names if c not in keep]
+    return dataset.remove_columns(drop)
 
 
 def _class_weights(labels: list[int], torch):
@@ -54,6 +65,7 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-length", type=int, default=128)
+    parser.add_argument("--limit", type=int, default=0, help="Subset each split (0 = full); for smoke tests")
     args = parser.parse_args()
 
     import torch
@@ -68,8 +80,13 @@ def main():
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    raw = load_dataset("go_emotions", "simplified")
+    raw = load_dataset("google-research-datasets/go_emotions", "simplified")
     data = _prepare(raw, tokenizer, args.max_length)
+
+    if args.limit:
+        for split in list(data.keys()):
+            data[split] = data[split].select(range(min(args.limit, len(data[split]))))
+        print(f"[smoke] limited each split to {args.limit} examples")
 
     class_weights = _class_weights(data["train"]["label"], torch)
 
@@ -107,6 +124,7 @@ def main():
         metric_for_best_model="f1",
         greater_is_better=True,
         logging_steps=100,
+        report_to="none",
     )
 
     trainer = WeightedTrainer(

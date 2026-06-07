@@ -20,6 +20,7 @@ tokenizers>=0.19
 # ---- ML core (training + evaluation, run on the M4 Max) ----
 torch>=2.2
 torchvision>=0.17
+accelerate>=1.1.0      # required by the HF Trainer
 scikit-learn>=1.4
 numpy>=1.26
 pandas>=2.2
