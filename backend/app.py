@@ -28,10 +28,22 @@ def _load_text_model() -> EmotionModel:
     return StubTextEmotionModel()
 
 
+def _load_face_model() -> EmotionModel:
+    """Use the trained FER CNN if FACE_MODEL_PATH is set; otherwise the stub."""
+    if settings.face_model_path and os.path.isfile(settings.face_model_path):
+        try:
+            from backend.models.face_model import CnnFaceEmotionModel
+
+            return CnnFaceEmotionModel(settings.face_model_path)
+        except Exception as exc:  # missing torch/cv2/weights -> stay usable
+            print(f"[warn] falling back to stub face model: {exc}")
+    return StubFaceEmotionModel()
+
+
 def build_pipeline() -> EmotionPipeline:
     """Assemble the pipeline from config. Swap stubs for trained models here."""
     text_model = _load_text_model()
-    face_model = StubFaceEmotionModel()
+    face_model = _load_face_model()
 
     if settings.fusion_strategy == "weighted_average":
         fusion = WeightedAverageFusion(settings.text_weight, settings.conflict_threshold)

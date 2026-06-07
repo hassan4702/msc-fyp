@@ -10,10 +10,22 @@ independently and swapped later (stub -> real model) without touching callers.
 """
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from backend.emotions import EMOTIONS
+
+
+def scores_from_logits(logits: list[float]) -> dict[str, float]:
+    """Softmax over the 7 logits, keyed by emotion in canonical EMOTIONS order.
+
+    Shared by both model wrappers; the head is trained so logit i == EMOTIONS[i].
+    """
+    top = max(logits)
+    exps = [math.exp(x - top) for x in logits]
+    total = sum(exps)
+    return {emotion: e / total for emotion, e in zip(EMOTIONS, exps)}
 
 
 @dataclass

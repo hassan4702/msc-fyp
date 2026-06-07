@@ -8,18 +8,11 @@ implement the same `EmotionModel.predict(str)` contract.
 The model is trained with label index i == EMOTIONS[i], so output logit i
 corresponds to EMOTIONS[i]; `_scores_from_logits` relies on that ordering.
 """
-import math
-
 from backend.emotions import EMOTIONS
-from backend.models.base import EmotionModel, EmotionPrediction
+from backend.models.base import EmotionModel, EmotionPrediction, scores_from_logits
 
-
-def _scores_from_logits(logits: list[float]) -> dict[str, float]:
-    """Softmax over the 7 logits, keyed by emotion in canonical EMOTIONS order."""
-    top = max(logits)
-    exps = [math.exp(x - top) for x in logits]
-    total = sum(exps)
-    return {emotion: e / total for emotion, e in zip(EMOTIONS, exps)}
+# Backwards-compatible alias; the implementation now lives in base (shared with face).
+_scores_from_logits = scores_from_logits
 
 _KEYWORDS = {
     "anger": ["angry", "furious", "annoyed", "hate", "mad"],
