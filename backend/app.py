@@ -2,9 +2,12 @@
 
 Run locally with:  uvicorn backend.app:app --reload
 """
+import os
+
 from fastapi import FastAPI
 
 from backend.config import settings
+from backend.models.base import EmotionModel
 from backend.models.face_model import StubFaceEmotionModel
 from backend.models.fusion import ConfidenceGatedFusion, WeightedAverageFusion
 from backend.models.llm import OllamaResponder, TemplateResponder
@@ -13,9 +16,21 @@ from backend.schemas import ChatRequest, ChatResponse
 from backend.services.pipeline import EmotionPipeline
 
 
+def _load_text_model() -> EmotionModel:
+    """Use the fine-tuned DistilBERT if TEXT_MODEL_DIR is set; otherwise the stub."""
+    if settings.text_model_dir and os.path.isdir(settings.text_model_dir):
+        try:
+            from backend.models.text_model import TransformerTextEmotionModel
+
+            return TransformerTextEmotionModel(settings.text_model_dir)
+        except Exception as exc:  # missing torch/weights -> stay usable
+            print(f"[warn] falling back to stub text model: {exc}")
+    return StubTextEmotionModel()
+
+
 def build_pipeline() -> EmotionPipeline:
     """Assemble the pipeline from config. Swap stubs for trained models here."""
-    text_model = StubTextEmotionModel()
+    text_model = _load_text_model()
     face_model = StubFaceEmotionModel()
 
     if settings.fusion_strategy == "weighted_average":
