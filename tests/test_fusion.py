@@ -1,6 +1,7 @@
 from backend.emotions import EMOTIONS
+from backend.emotions import EMOTIONS
 from backend.models.base import EmotionPrediction
-from backend.models.fusion import ConfidenceGatedFusion, WeightedAverageFusion
+from backend.models.fusion import ConfidenceGatedFusion, LearnedFusion, WeightedAverageFusion
 
 
 def _pred(label: str, conf: float, source: str, available: bool = True) -> EmotionPrediction:
@@ -49,3 +50,23 @@ def test_confidence_gating_favours_more_confident_modality():
     # Higher-confidence text should dominate the fused label.
     assert res.prediction.label == "happy"
     assert res.text_weight > res.face_weight
+
+
+class _FakeArbiter:
+    """Stand-in for a trained classifier; always predicts 'fear'."""
+
+    def predict_proba(self, feature_rows):
+        vec = [0.0] * len(EMOTIONS)
+        vec[EMOTIONS.index("fear")] = 1.0
+        return [vec for _ in feature_rows]
+
+
+def test_learned_fusion_uses_model_prediction():
+    res = LearnedFusion(_FakeArbiter()).fuse(_pred("happy", 0.9, "text"), _pred("sad", 0.9, "face"))
+    assert res.prediction.label == "fear"
+    assert res.strategy == "learned"
+
+
+def test_learned_fusion_feature_vector_shape():
+    feats = LearnedFusion.features(_pred("happy", 0.9, "text"), _pred("sad", 0.9, "face"))
+    assert len(feats) == 2 * len(EMOTIONS) + 3  # P_text, P_face, conf_text, conf_face, available

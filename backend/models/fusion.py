@@ -46,6 +46,28 @@ class WeightedAverageFusion(FusionStrategy):
                             w_text, w_face, "weighted_average")
 
 
+class LearnedFusion(FusionStrategy):
+    """Arbiter (RQ2): a trained classifier decides the label from both predictions.
+
+    The model is injected (must expose `predict_proba(rows) -> list[list[float]]`
+    over the 7 classes in EMOTIONS order), so this stays sklearn-free and testable.
+    It is trained on paired (text, face, gold) data in evaluation/evaluate_meld.py.
+    """
+
+    def __init__(self, model, conflict_threshold: float = 0.5):
+        self.model = model
+        self.conflict_threshold = conflict_threshold
+
+    @staticmethod
+    def features(text: EmotionPrediction, face: EmotionPrediction) -> list[float]:
+        return text.vector() + face.vector() + [text.confidence, face.confidence, float(face.available)]
+
+    def fuse(self, text: EmotionPrediction, face: EmotionPrediction) -> FusionResult:
+        probs = self.model.predict_proba([self.features(text, face)])[0]
+        fused = EmotionPrediction.from_scores(dict(zip(EMOTIONS, probs)), source="fused")
+        return FusionResult(fused, _is_conflict(text, face, self.conflict_threshold), 0.0, 0.0, "learned")
+
+
 class ConfidenceGatedFusion(FusionStrategy):
     """Weights scale with each modality's confidence; missing modality is dropped."""
 
