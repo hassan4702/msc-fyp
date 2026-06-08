@@ -5,10 +5,11 @@ text model; then score text-only / face-only / each fusion strategy / majority,
 both overall and on the conflict subset (where the two channels disagree). Also
 trains the learned arbiter (RQ2) on the train split.
 
-Run on the M4 Max after MELD_raw.tar.gz is downloaded:
+Run on the M4 Max (videos extracted to data/meld/MELD_raw/videos, emotion-label
+CSVs in data/meld/labels):
 
-    python evaluation/evaluate_meld.py --tar ~/.cache/huggingface/.../MELD_raw.tar.gz \
-        --text-model-dir models/weights/text --face-model-path models/weights/face/face_net.pt
+    python evaluation/evaluate_meld.py --text-model-dir models/weights/text \
+        --face-model-path models/weights/face/face_net.pt
 
 Heavy + slow (video decode + two model forwards per utterance); use --limit for a
 quick pass. The FER->TV domain gap means the face channel is expected to be weak;
@@ -20,7 +21,6 @@ import argparse
 import base64
 import csv
 import sys
-import tarfile
 from collections import Counter
 from pathlib import Path
 
@@ -35,46 +35,25 @@ from backend.models.fusion import (  # noqa: E402
 from evaluation.meld import meld_to_canonical  # noqa: E402
 from evaluation.scoring import macro_f1  # noqa: E402
 
-# split -> (annotation CSV, candidate video subdir names in the extracted tree)
-SPLITS = {
-    "train": ("train_sent_emo.csv", ["train_splits", "train"]),
-    "dev": ("dev_sent_emo.csv", ["dev_splits_complete", "dev"]),
-    "test": ("test_sent_emo.csv", ["output_repeated_splits_test", "test"]),
-}
 
+def load_split_rows(labels_dir: str, videos_dir: str, split: str, limit: int = 0) -> list[dict]:
+    """Join MELD emotion labels to the repackaged video files.
 
-def extract_all(tar_path: str, dest: str) -> Path:
-    dest = Path(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    if not any(dest.rglob("*_sent_emo.csv")):
-        print(f"extracting {tar_path} -> {dest}")
-        with tarfile.open(tar_path) as t:
-            t.extractall(dest)
-        for nested in list(dest.rglob("*.tar.gz")) + list(dest.rglob("*.tar")):
-            with tarfile.open(nested) as t:
-                t.extractall(nested.parent)
-    return dest
-
-
-def _find_dir(root: Path, names: list[str]) -> Path | None:
-    for name in names:
-        for d in root.rglob(name):
-            if d.is_dir():
-                return d
-    return None
-
-
-def load_split_rows(root: Path, split: str, limit: int = 0) -> list[dict]:
-    csv_name, dir_names = SPLITS[split]
-    csv_path = next(iter(root.rglob(csv_name)), None)
-    video_dir = _find_dir(root, dir_names)
-    if csv_path is None or video_dir is None:
-        raise FileNotFoundError(f"{split}: csv={csv_path} video_dir={video_dir} under {root}")
+    Videos are named {split}_dia{D}_utt{U}.mp4; the emotion labels come from the
+    authoritative declare-lab sent_emo CSVs (the video repackaging dropped the
+    emotion column), matched on (split, Dialogue_ID, Utterance_ID).
+    """
+    csv_path = Path(labels_dir) / f"{split}_sent_emo.csv"
+    videos = Path(videos_dir)
     rows = []
     with open(csv_path, newline="", encoding="utf-8", errors="ignore") as f:
         for r in csv.DictReader(f):
-            video = video_dir / f"dia{r['Dialogue_ID']}_utt{r['Utterance_ID']}.mp4"
-            rows.append({"text": r["Utterance"], "gold": meld_to_canonical(r["Emotion"]), "video": video})
+            d, u = r["Dialogue_ID"], r["Utterance_ID"]
+            rows.append({
+                "text": r["Utterance"],
+                "gold": meld_to_canonical(r["Emotion"]),
+                "video": videos / f"{split}_dia{d}_utt{u}.mp4",
+            })
     return rows[:limit] if limit else rows
 
 
@@ -147,8 +126,8 @@ def evaluate(records: list[dict], strategies: dict) -> dict[str, float]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tar", required=True, help="path to MELD_raw.tar.gz")
-    parser.add_argument("--data-dir", default="data/meld")
+    parser.add_argument("--videos-dir", default="data/meld/MELD_raw/videos")
+    parser.add_argument("--labels-dir", default="data/meld/labels")
     parser.add_argument("--text-model-dir", default="models/weights/text")
     parser.add_argument("--face-model-path", default="models/weights/face/face_net.pt")
     parser.add_argument("--limit", type=int, default=0, help="cap utterances per split (0 = all)")
@@ -159,15 +138,14 @@ def main():
     from backend.models.face_model import CnnFaceEmotionModel
     from backend.models.text_model import TransformerTextEmotionModel
 
-    root = extract_all(args.tar, args.data_dir)
     text_model = TransformerTextEmotionModel(args.text_model_dir)
     face_model = CnnFaceEmotionModel(args.face_model_path)
 
     print("building train records (for the arbiter)...")
-    train_rows = load_split_rows(root, "train", args.limit)
+    train_rows = load_split_rows(args.labels_dir, args.videos_dir, "train", args.limit)
     train_records = build_records(train_rows, text_model, face_model, cv2)
     print("building test records...")
-    test_rows = load_split_rows(root, "test", args.limit)
+    test_rows = load_split_rows(args.labels_dir, args.videos_dir, "test", args.limit)
     test_records = build_records(test_rows, text_model, face_model, cv2)
 
     coverage = sum(1 for r in test_records if r["face"].available) / max(len(test_records), 1)
