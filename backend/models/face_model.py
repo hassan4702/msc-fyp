@@ -10,11 +10,13 @@ and unit-tested; the heavy detect+forward path lives in the wrapper.
 import base64
 
 from backend.emotions import EMOTIONS
-from backend.models.base import EmotionModel, EmotionPrediction, scores_from_logits
+from backend.models.base import EmotionModel, EmotionPrediction, read_temperature, scores_from_logits
 
 
-def aggregate_frame_logits(frame_logits: list[list[float] | None]) -> EmotionPrediction:
-    """Average per-frame softmax over frames that contained a face.
+def aggregate_frame_logits(
+    frame_logits: list[list[float] | None], temperature: float = 1.0
+) -> EmotionPrediction:
+    """Average per-frame (temperature-scaled) softmax over frames that had a face.
 
     `None` entries are frames where no face was detected. If none had a face, the
     prediction is flagged unavailable so fusion falls back to text.
@@ -24,7 +26,7 @@ def aggregate_frame_logits(frame_logits: list[list[float] | None]) -> EmotionPre
         return EmotionPrediction.unavailable(source="face")
     summed = {e: 0.0 for e in EMOTIONS}
     for logits in valid:
-        for emotion, prob in scores_from_logits(logits).items():
+        for emotion, prob in scores_from_logits(logits, temperature).items():
             summed[emotion] += prob
     averaged = {e: summed[e] / len(valid) for e in EMOTIONS}
     return EmotionPrediction.from_scores(averaged, source="face")
@@ -44,6 +46,8 @@ class CnnFaceEmotionModel(EmotionModel):
     """FER-2013 CNN over webcam frames. Heavy deps (torch, cv2) imported lazily."""
 
     def __init__(self, model_path: str, device: str | None = None):
+        import os
+
         import cv2
         import torch
 
@@ -56,6 +60,7 @@ class CnnFaceEmotionModel(EmotionModel):
         self.model.eval()
         self.device = device or ("mps" if torch.backends.mps.is_available() else "cpu")
         self.model.to(self.device)
+        self.temperature = read_temperature(os.path.dirname(model_path))
         cascade = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         self.detector = cv2.CascadeClassifier(cascade)
 
@@ -80,4 +85,4 @@ class CnnFaceEmotionModel(EmotionModel):
 
     def predict(self, inputs: list | None) -> EmotionPrediction:
         frames = inputs or []
-        return aggregate_frame_logits([self._logits_for_frame(f) for f in frames])
+        return aggregate_frame_logits([self._logits_for_frame(f) for f in frames], self.temperature)

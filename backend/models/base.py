@@ -10,22 +10,36 @@ independently and swapped later (stub -> real model) without touching callers.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from backend.emotions import EMOTIONS
 
 
-def scores_from_logits(logits: list[float]) -> dict[str, float]:
-    """Softmax over the 7 logits, keyed by emotion in canonical EMOTIONS order.
+def scores_from_logits(logits: list[float], temperature: float = 1.0) -> dict[str, float]:
+    """Temperature-scaled softmax over the 7 logits, keyed by emotion in EMOTIONS order.
 
     Shared by both model wrappers; the head is trained so logit i == EMOTIONS[i].
+    `temperature` > 1 softens overconfident predictions (see training/calibrate.py);
+    it never changes the argmax.
     """
-    top = max(logits)
-    exps = [math.exp(x - top) for x in logits]
+    scaled = [x / temperature for x in logits]
+    top = max(scaled)
+    exps = [math.exp(x - top) for x in scaled]
     total = sum(exps)
     return {emotion: e / total for emotion, e in zip(EMOTIONS, exps)}
+
+
+def read_temperature(directory: str) -> float:
+    """Read the calibration temperature from `<directory>/calibration.json`, or 1.0."""
+    path = os.path.join(directory, "calibration.json")
+    if os.path.isfile(path):
+        with open(path) as f:
+            return float(json.load(f).get("temperature", 1.0))
+    return 1.0
 
 
 @dataclass

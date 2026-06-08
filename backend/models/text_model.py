@@ -9,7 +9,7 @@ The model is trained with label index i == EMOTIONS[i], so output logit i
 corresponds to EMOTIONS[i]; `_scores_from_logits` relies on that ordering.
 """
 from backend.emotions import EMOTIONS
-from backend.models.base import EmotionModel, EmotionPrediction, scores_from_logits
+from backend.models.base import EmotionModel, EmotionPrediction, read_temperature, scores_from_logits
 
 # Backwards-compatible alias; the implementation now lives in base (shared with face).
 _scores_from_logits = scores_from_logits
@@ -58,6 +58,7 @@ class TransformerTextEmotionModel(EmotionModel):
         self.model.eval()
         self.device = device or ("mps" if torch.backends.mps.is_available() else "cpu")
         self.model.to(self.device)
+        self.temperature = read_temperature(model_dir)
 
     def predict(self, inputs: str) -> EmotionPrediction:
         enc = self.tokenizer(
@@ -65,4 +66,4 @@ class TransformerTextEmotionModel(EmotionModel):
         ).to(self.device)
         with self._torch.no_grad():
             logits = self.model(**enc).logits[0].tolist()
-        return EmotionPrediction.from_scores(_scores_from_logits(logits), source="text")
+        return EmotionPrediction.from_scores(scores_from_logits(logits, self.temperature), source="text")
