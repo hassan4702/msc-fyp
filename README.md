@@ -5,9 +5,12 @@ A chatbot that detects emotion from **face (webcam) + typed text** at the same
 time, **fuses** the two signals, and uses the result to generate more empathetic
 replies.
 
-> **Status:** walking skeleton. Real architecture and contracts are in place;
-> the emotion models and LLM are stubs that run offline so the whole pipeline
-> works end-to-end today. See [the implementation plan](docs/plan/2026-06-07-implementation-plan.md).
+> **Status:** functional. Text model (GoEmotions, macro-F1 0.62) and face model
+> (FER-2013, macro-F1 0.58) trained + temperature-calibrated; late fusion with a
+> learned conflict arbiter; empathetic replies via a local LLM (Ollama). MELD
+> evaluation in [evaluation/results](evaluation/results/meld_results.md). Stubs
+> still ship so the repo runs with no weights/LLM. Remaining: React frontend +
+> user study. See [the plan](docs/plan/2026-06-07-implementation-plan.md).
 
 ## Architecture
 
@@ -31,6 +34,22 @@ uvicorn backend.app:app --reload        # serve the API at http://localhost:8000
 
 Try it: `POST /chat` with `{"message": "I'm fine, thanks"}` -> reply + detected emotions.
 Full ML/training/eval dependencies are in `requirements.txt`.
+
+### Run the full chatbot (trained models + local LLM)
+
+With the trained weights present (`models/weights/`) and Ollama running:
+
+```bash
+ollama pull qwen2.5:7b                  # one-time
+LLM_BACKEND=ollama \
+TEXT_MODEL_DIR=models/weights/text \
+FACE_MODEL_PATH=models/weights/face/face_net.pt \
+  uvicorn backend.app:app
+```
+
+`POST /chat` then returns an empathetic, emotion-conditioned reply. Without these
+env vars the app falls back to the keyword/stub models and a templated responder,
+so it still runs anywhere.
 
 ## Layout
 
