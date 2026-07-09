@@ -12,13 +12,16 @@ never webcam frames. This matches the GDPR commitments in the risk assessment.
 from backend.models.base import Responder
 
 SYSTEM_TEMPLATE = (
-    "You are an empathetic assistant. The user's current emotional state appears "
-    "to be {emotion}, detected from their face and text. Respond supportively and "
-    "appropriately to their message.{conflict}"
+    "You are Empath, a warm, emotionally attuned companion. A separate system has "
+    "detected that the user seems to be feeling {emotion}. In your reply: (1) gently "
+    'name the emotion you sense — e.g. "it sounds like you might be feeling {emotion}" '
+    "— and ask whether that's really how they feel, so they can correct you; then "
+    "(2) respond supportively to what they actually said. Be warm and natural, never "
+    "clinical or repetitive.{conflict}"
 )
 CONFLICT_NOTE = (
-    " Their words and facial expression seem to differ, so acknowledge this gently "
-    "rather than assuming how they feel."
+    " Their words and their facial expression seem to point to different feelings, so "
+    "acknowledge that gently and ask which is closer to the truth."
 )
 
 
@@ -32,11 +35,13 @@ class TemplateResponder(Responder):
     def generate(self, message: str, emotion: str, conflicted: bool, history=None) -> str:
         if conflicted:
             return (
-                "I hear you — and I want to check in, because your message and your "
-                "expression seem to point in slightly different directions. How are you "
-                "really doing?"
+                "I want to check in — your words and your expression seem to point in "
+                "different directions. How are you really feeling right now?"
             )
-        return f"It sounds like you might be feeling {emotion}. I'm here to help — tell me more."
+        return (
+            f"It sounds like you might be feeling {emotion} — is that right? "
+            "I'm here either way; tell me more."
+        )
 
 
 class OllamaResponder(Responder):

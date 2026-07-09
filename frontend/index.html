@@ -84,8 +84,16 @@
     border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-bottom-right-radius: 5px; }
   .row.bot .bubble { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
   .bubble p { margin: 0 0 8px; } .bubble p:last-child { margin: 0; }
+  .bubble > *:first-child { margin-top: 0; } .bubble > *:last-child { margin-bottom: 0; }
   .bubble code { background: #0004; padding: 1px 5px; border-radius: 5px; font-size: 13px; }
-  .bubble pre { background: #0005; padding: 10px 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; margin: 6px 0; }
+  .bubble pre { background: #0005; padding: 10px 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; margin: 8px 0; }
+  .bubble pre code { background: none; padding: 0; }
+  .bubble ul, .bubble ol { margin: 6px 0; padding-left: 20px; } .bubble li { margin: 3px 0; }
+  .bubble h1, .bubble h2, .bubble h3 { font-family: var(--serif); font-weight: 500; line-height: 1.25; margin: 12px 0 6px; }
+  .bubble h1 { font-size: 19px; } .bubble h2 { font-size: 17px; } .bubble h3 { font-size: 15.5px; }
+  .bubble a { color: var(--accent); }
+  .bubble blockquote { margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted-solid); }
+  .bubble strong { font-weight: 600; }
 
   /* per-message emotion chips */
   .chips { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
@@ -148,6 +156,7 @@
   </div>
   <canvas id="grab" hidden></canvas>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
   const EMO = {
     anger:{e:'😠',c:'#d9614c'}, disgust:{e:'🤢',c:'#7ea653'}, fear:{e:'😨',c:'#8b7bd8'},
@@ -174,6 +183,11 @@
       .replace(/(^|\n)[-*] /g, '$1• ')
       .replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
     return `<p>${t}</p>`;
+  }
+  // bot replies are markdown -> render with marked (fallback to the mini renderer offline)
+  function renderBot(text) {
+    try { return window.marked ? marked.parse(text) : md(text); }
+    catch (e) { return md(text); }
   }
   const pct = x => Math.round(x * 100) + '%';
 
@@ -220,7 +234,7 @@
     busy = true;
     document.getElementById('welcome')?.remove();
     ta.value = ''; ta.style.height = 'auto';
-    const me = addRow('me', md(text));
+    const me = addRow('me', `<p>${esc(text)}</p>`);
     const bot = addRow('bot', `<span class="dots"><span></span><span></span><span></span></span>`);
     const f = frame();
     try {
@@ -229,7 +243,7 @@
         body: JSON.stringify({message: text, frames: f ? [f] : [], history}),
       });
       const r = await res.json();
-      bot.querySelector('.bubble').innerHTML = md(r.reply);
+      bot.querySelector('.bubble').innerHTML = renderBot(r.reply);
       addChips(me, r);
       setMood(r.fused_emotion.label, r.fused_emotion.confidence);
       history.push({role: 'user', content: text}, {role: 'assistant', content: r.reply});

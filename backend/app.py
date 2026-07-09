@@ -66,7 +66,10 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(Path(__file__).resolve().parent.parent / "frontend" / "index.html")
+        return FileResponse(
+            Path(__file__).resolve().parent.parent / "frontend" / "index.html",
+            headers={"Cache-Control": "no-cache"},  # always serve the latest UI while iterating
+        )
 
     @app.get("/health")
     def health():
