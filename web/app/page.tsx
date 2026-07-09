@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Account } from "@/components/account";
 
 const EMO: Record<string, { e: string; c: string }> = {
   anger: { e: "😠", c: "#d9614c" },
@@ -157,7 +158,8 @@ export default function Page() {
             emotion-aware companion
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <Account />
           <div className="relative h-11 w-11 shrink-0">
             <video
               ref={videoRef}
