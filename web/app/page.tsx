@@ -82,15 +82,16 @@ export default function Page() {
   const history = useRef<{ role: string; content: string }[]>([]);
 
   useEffect(() => {
+    let stream: MediaStream | undefined;
     navigator.mediaDevices
       ?.getUserMedia({ video: true })
       .then((s) => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          setCamOk(true);
-        }
+        stream = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+        setCamOk(true);
       })
       .catch(() => setCamOk(false));
+    return () => stream?.getTracks().forEach((t) => t.stop());
   }, []);
 
   useEffect(() => {
@@ -157,18 +158,24 @@ export default function Page() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {camOk ? (
+          <div className="relative h-11 w-11 shrink-0">
             <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
-              className="h-11 w-11 rounded-full object-cover"
-              style={{ border: "2px solid color-mix(in srgb, var(--emo) 60%, transparent)" }}
+              className="h-11 w-11 rounded-full object-cover transition-opacity duration-500"
+              style={{
+                border: "2px solid color-mix(in srgb, var(--emo) 60%, transparent)",
+                opacity: camOk ? 1 : 0,
+              }}
             />
-          ) : (
-            <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary text-lg">📷</div>
-          )}
+            {!camOk && (
+              <div className="absolute inset-0 grid place-items-center rounded-full bg-secondary text-lg">
+                📷
+              </div>
+            )}
+          </div>
           <div
             className="h-8 w-8 rounded-full transition-all duration-700"
             style={{
