@@ -3,8 +3,10 @@
 Run locally with:  uvicorn backend.app:app --reload
 """
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from backend.config import settings
 from backend.models.base import EmotionModel
@@ -61,6 +63,10 @@ def build_pipeline() -> EmotionPipeline:
 def create_app() -> FastAPI:
     app = FastAPI(title="Multimodal Emotion-Aware Chatbot", version="0.1.0")
     pipeline = build_pipeline()
+
+    @app.get("/")
+    def index():
+        return FileResponse(Path(__file__).resolve().parent.parent / "frontend" / "index.html")
 
     @app.get("/health")
     def health():

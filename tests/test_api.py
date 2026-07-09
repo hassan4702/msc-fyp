@@ -3,6 +3,12 @@ from fastapi.testclient import TestClient
 from backend.app import create_app
 
 
+def test_index_page_served():
+    r = TestClient(create_app()).get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+
+
 def test_health():
     client = TestClient(create_app())
     r = client.get("/health")
