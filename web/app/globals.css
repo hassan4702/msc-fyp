@@ -1,0 +1,102 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-emo: var(--emo);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/* runtime emotion accent — set by JS, morphs smoothly */
+@property --emo {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #b5a893;
+}
+
+/* Warm "Empath" theme — deliberately not the default shadcn grayscale. */
+:root {
+  --emo: #b5a893;
+  --background: #1a1613;
+  --foreground: #efe8dd;
+  --card: #221d17;
+  --card-foreground: #efe8dd;
+  --popover: #221d17;
+  --popover-foreground: #efe8dd;
+  --primary: var(--emo);
+  --primary-foreground: #1a1613;
+  --secondary: #2b251d;
+  --secondary-foreground: #efe8dd;
+  --muted: #2b251d;
+  --muted-foreground: #a49a8b;
+  --accent: #2b251d;
+  --accent-foreground: #efe8dd;
+  --destructive: oklch(0.62 0.19 25);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: var(--emo);
+  --radius: 1rem;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { @apply font-sans; height: 100%; }
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100%;
+    transition: --emo 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* subtle film grain */
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* ambient emotion glow */
+.ambient {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(70% 55% at 50% -8%, color-mix(in srgb, var(--emo) 38%, transparent), transparent 70%),
+    radial-gradient(52% 42% at 92% 108%, color-mix(in srgb, var(--emo) 18%, transparent), transparent 70%);
+  transition: background 0.9s ease;
+}
+
+.font-heading { font-family: var(--font-heading); }
+
+/* markdown inside chat bubbles */
+.prose-chat :where(p):not(:last-child) { margin-bottom: 0.5rem; }
+.prose-chat :where(ul, ol) { margin: 0.4rem 0; padding-left: 1.25rem; }
+.prose-chat :where(ul) { list-style: disc; }
+.prose-chat :where(ol) { list-style: decimal; }
+.prose-chat :where(li) { margin: 0.15rem 0; }
+.prose-chat :where(h1, h2, h3) { font-family: var(--font-heading); font-weight: 500; margin: 0.6rem 0 0.3rem; }
+.prose-chat :where(code) { background: #0004; padding: 0.05rem 0.3rem; border-radius: 0.3rem; font-size: 0.85em; }
+.prose-chat :where(pre) { background: #0005; padding: 0.6rem 0.75rem; border-radius: 0.6rem; overflow-x: auto; margin: 0.4rem 0; }
+.prose-chat :where(a) { color: var(--emo); text-decoration: underline; }
