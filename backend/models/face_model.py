@@ -69,19 +69,22 @@ class CnnFaceEmotionModel(EmotionModel):
 
         from backend.models.face_net import INPUT_SIZE, preprocess_gray
 
-        raw = base64.b64decode(frame_b64.split(",")[-1])
-        buf = np.frombuffer(raw, dtype=np.uint8)
-        img = self._cv2.imdecode(buf, self._cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            return None
-        faces = self.detector.detectMultiScale(img, scaleFactor=1.1, minNeighbors=5)
-        if len(faces) == 0:
-            return None
-        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])  # largest face
-        crop = self._cv2.resize(img[y:y + h, x:x + w], (INPUT_SIZE, INPUT_SIZE))
-        tensor = preprocess_gray(crop).to(self.device)
-        with self._torch.no_grad():
-            return self.model(tensor)[0].tolist()
+        try:
+            raw = base64.b64decode(frame_b64.split(",")[-1])
+            buf = np.frombuffer(raw, dtype=np.uint8)
+            img = self._cv2.imdecode(buf, self._cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                return None
+            faces = self.detector.detectMultiScale(img, scaleFactor=1.1, minNeighbors=5)
+            if len(faces) == 0:
+                return None
+            x, y, w, h = max(faces, key=lambda f: f[2] * f[3])  # largest face
+            crop = self._cv2.resize(img[y:y + h, x:x + w], (INPUT_SIZE, INPUT_SIZE))
+            tensor = preprocess_gray(crop).to(self.device)
+            with self._torch.no_grad():
+                return self.model(tensor)[0].tolist()
+        except Exception:
+            return None  # ponytail: bad/undecodable frame -> treat as no face, never crash the request
 
     def predict(self, inputs: list | None) -> EmotionPrediction:
         frames = inputs or []
