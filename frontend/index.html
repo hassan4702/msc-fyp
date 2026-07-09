@@ -3,102 +3,247 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Emotion-Aware Chatbot</title>
+<title>Empath — Emotion-Aware Companion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;450;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e8eaed;
-         display: flex; flex-direction: column; height: 100vh; }
-  header { padding: 12px 18px; font-weight: 600; border-bottom: 1px solid #23262e; }
-  #emotion { padding: 10px 18px; border-bottom: 1px solid #23262e; background: #151821; min-height: 62px; }
-  #emotion.hidden { display: none; }
-  #emotion .big { font-size: 20px; text-transform: capitalize; }
-  #emotion .pct { color: #8a92a6; font-size: 14px; }
-  #emotion .sub { color: #8a92a6; font-size: 13px; margin-top: 2px; }
-  #emotion .conflict { color: #ffb454; font-size: 13px; margin-top: 3px; }
-  #chat { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
-  .bubble { max-width: 75%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; }
-  .bubble.user { align-self: flex-end; background: #2b6cff; color: #fff; border-bottom-right-radius: 4px; }
-  .bubble.bot { align-self: flex-start; background: #1c2029; border-bottom-left-radius: 4px; }
-  #composer { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid #23262e; }
-  #cam { width: 88px; height: 66px; object-fit: cover; border-radius: 8px; background: #000; }
-  .nocam { width: 88px; height: 66px; display: flex; align-items: center; justify-content: center;
-           font-size: 11px; text-align: center; color: #8a92a6; background: #1c2029; border-radius: 8px; }
-  #msg { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px solid #2b303b;
-         background: #151821; color: #e8eaed; font-size: 15px; }
-  #send { padding: 11px 18px; border: 0; border-radius: 10px; background: #2b6cff; color: #fff;
-          font-weight: 600; cursor: pointer; }
+  @property --accent { syntax: '<color>'; inherits: true; initial-value: #b5a893; }
+  :root {
+    --bg: #1a1613; --surface: #241f19; --surface-2: #2c261f;
+    --text: #efe8dd; --muted: #a1968780; --muted-solid: #a19687;
+    --line: #ffffff12; --accent: #b5a893;
+    --radius: 18px;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans); background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: --accent 0.9s cubic-bezier(.4,0,.2,1);
+  }
+  /* ambient emotion glow — shifts colour with detected mood */
+  .glow {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(70% 55% at 50% -8%, color-mix(in srgb, var(--accent) 40%, transparent), transparent 70%),
+      radial-gradient(50% 40% at 92% 108%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%);
+    transition: background 0.9s ease;
+  }
+  /* subtle grain */
+  body::after {
+    content: ''; position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: .035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  header, main, .composer { position: relative; z-index: 2; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 16px 24px; border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px); animation: rise .7s ease both;
+  }
+  .brand { font-family: var(--serif); font-size: 22px; font-weight: 500; letter-spacing: -.01em; }
+  .brand span { color: var(--accent); transition: color .9s ease; }
+  .brand small { display: block; font-family: var(--sans); font-size: 11.5px; font-weight: 450;
+    color: var(--muted-solid); letter-spacing: .04em; text-transform: uppercase; margin-top: 2px; }
+
+  /* mood widget: live webcam + mood ring */
+  .mood { display: flex; align-items: center; gap: 12px; }
+  #cam { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; background: #000;
+    border: 2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); transition: border-color .9s ease; }
+  .nocam { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 18px; background: var(--surface); border: 1px solid var(--line); }
+  .ring {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent) 70%);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); transition: all .9s ease;
+  }
+  .mood .lbl { line-height: 1.15; }
+  .mood .lbl b { font-family: var(--serif); font-weight: 500; text-transform: capitalize; font-size: 15px; }
+  .mood .lbl span { display: block; font-size: 11px; color: var(--muted-solid); }
+
+  main { flex: 1; overflow-y: auto; padding: 30px 0 12px; scroll-behavior: smooth; }
+  .thread { max-width: 720px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 22px; }
+
+  .welcome { text-align: center; margin: 8vh auto; max-width: 460px; animation: rise .8s .1s ease both; }
+  .welcome h1 { font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1.2; letter-spacing: -.02em; }
+  .welcome p { color: var(--muted-solid); margin-top: 12px; font-size: 15px; }
+
+  .row { display: flex; gap: 12px; align-items: flex-start; animation: rise .45s ease both; }
+  .row.me { flex-direction: row-reverse; }
+  .av { flex: none; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center;
+    font-size: 15px; margin-top: 2px; }
+  .av.bot { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 80%, white), var(--accent)); }
+  .av.me { background: var(--surface-2); border: 1px solid var(--line); }
+  .col { display: flex; flex-direction: column; gap: 6px; max-width: 78%; }
+  .row.me .col { align-items: flex-end; }
+  .bubble { padding: 11px 15px; border-radius: 16px; font-size: 15px; line-height: 1.58; white-space: normal; }
+  .row.me .bubble { background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-bottom-right-radius: 5px; }
+  .row.bot .bubble { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .bubble p { margin: 0 0 8px; } .bubble p:last-child { margin: 0; }
+  .bubble code { background: #0004; padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .bubble pre { background: #0005; padding: 10px 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; margin: 6px 0; }
+
+  /* per-message emotion chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line); color: var(--muted-solid); }
+  .chip.fused { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .chip.warn { color: #e7a94e; border-color: #e7a94e55; }
+
+  /* typing dots */
+  .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%;
+    background: var(--muted-solid); animation: blink 1.2s infinite; }
+  .dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+
+  .composer { padding: 12px 24px 20px; }
+  .box { max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 8px 8px 8px 18px;
+    box-shadow: 0 10px 40px -18px #000, 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+    transition: box-shadow .3s; }
+  .box:focus-within { box-shadow: 0 10px 40px -18px #000, 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+  textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5; max-height: 160px; padding: 6px 0; }
+  textarea::placeholder { color: var(--muted-solid); }
+  #send { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; cursor: pointer;
+    background: var(--accent); color: #1a1613; font-size: 17px; display: grid; place-items: center;
+    transition: transform .15s, background .9s ease; }
+  #send:hover { transform: scale(1.07); } #send:active { transform: scale(.94); }
+  .hint { max-width: 720px; margin: 8px auto 0; text-align: center; font-size: 11px; color: var(--muted-solid); }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+  main::-webkit-scrollbar { width: 9px; } main::-webkit-scrollbar-thumb { background: #ffffff14; border-radius: 9px; }
 </style>
 </head>
-<body>
-  <header>🫶 Multimodal Emotion-Aware Chatbot</header>
-  <div id="emotion" class="hidden"></div>
-  <div id="chat"></div>
-  <div id="composer">
-    <video id="cam" autoplay muted playsinline></video>
-    <input id="msg" placeholder="Type how you feel…" autocomplete="off">
-    <button id="send">Send</button>
+<body data-emotion="neutral">
+  <div class="glow"></div>
+  <header>
+    <div class="brand">Empath<span>.</span><small>emotion-aware companion</small></div>
+    <div class="mood">
+      <video id="cam" autoplay muted playsinline></video>
+      <div class="ring" id="ring"></div>
+      <div class="lbl"><b id="moodLabel">…</b><span id="moodConf">reading your mood</span></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="thread" id="thread">
+      <div class="welcome" id="welcome">
+        <h1>How are you feeling?</h1>
+        <p>Type anything. I read the emotion in your words and your face, and reply with that in mind — the room warms to your mood.</p>
+      </div>
+    </div>
+  </main>
+
+  <div class="composer">
+    <div class="box">
+      <textarea id="msg" rows="1" placeholder="Tell me what's on your mind…" autocomplete="off"></textarea>
+      <button id="send" title="Send">↑</button>
+    </div>
+    <div class="hint">Enter to send · Shift+Enter for a new line · camera optional</div>
   </div>
   <canvas id="grab" hidden></canvas>
+
 <script>
-  const chat = document.getElementById('chat');
-  const emo  = document.getElementById('emotion');
-  const msg  = document.getElementById('msg');
-  const cam  = document.getElementById('cam');
-  const grab = document.getElementById('grab');
+  const EMO = {
+    anger:{e:'😠',c:'#d9614c'}, disgust:{e:'🤢',c:'#7ea653'}, fear:{e:'😨',c:'#8b7bd8'},
+    happy:{e:'😊',c:'#f0b53f'}, sad:{e:'😢',c:'#5b8bd0'}, surprise:{e:'😮',c:'#40b6b0'},
+    neutral:{e:'😐',c:'#b5a893'}
+  };
+  const thread = document.getElementById('thread'), main = document.getElementById('main');
+  const ta = document.getElementById('msg'), cam = document.getElementById('cam'), grab = document.getElementById('grab');
+  const moodLabel = document.getElementById('moodLabel'), moodConf = document.getElementById('moodConf');
   const history = [];
-  const EMOJI = {anger:'😠', disgust:'🤢', fear:'😨', happy:'😊', sad:'😢', surprise:'😮', neutral:'😐'};
 
   navigator.mediaDevices?.getUserMedia({video: true})
     .then(s => cam.srcObject = s)
     .catch(() => cam.replaceWith(Object.assign(document.createElement('div'),
-      {className: 'nocam', textContent: '📷 camera off — text only'})));
+      {className: 'nocam', textContent: '📷'})));
+
+  const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  function md(t) {
+    t = esc(t)
+      .replace(/```([\s\S]*?)```/g, (_, c) => `<pre>${c.trim()}</pre>`)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/(^|\n)[-*] /g, '$1• ')
+      .replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
+    return `<p>${t}</p>`;
+  }
+  const pct = x => Math.round(x * 100) + '%';
+
+  function setMood(label, conf) {
+    const m = EMO[label] || EMO.neutral;
+    document.body.style.setProperty('--accent', m.c);
+    document.body.dataset.emotion = label;
+    moodLabel.textContent = `${m.e} ${label}`;
+    moodConf.textContent = pct(conf) + ' sure';
+  }
+
+  function addRow(who, html) {
+    const row = document.createElement('div'); row.className = 'row ' + who;
+    row.innerHTML =
+      `<div class="av ${who}">${who === 'bot' ? '' : '🙂'}</div>` +
+      `<div class="col"><div class="bubble">${html}</div></div>`;
+    thread.appendChild(row); main.scrollTop = main.scrollHeight;
+    return row;
+  }
+  function addChips(row, r) {
+    const t = r.text_emotion, fa = r.face_emotion, f = r.fused_emotion;
+    const chip = (cls, label, emo, conf) =>
+      `<span class="chip ${cls}">${EMO[emo]?.e || ''} ${label} ${conf != null ? pct(conf) : ''}</span>`;
+    const chips = document.createElement('div'); chips.className = 'chips';
+    chips.innerHTML =
+      chip('', 'words:', t.label, t.confidence) +
+      (fa.available ? chip('', 'face:', fa.label, fa.confidence) : `<span class="chip">👤 no face</span>`) +
+      chip('fused', 'fused:', f.label, f.confidence) +
+      (r.conflicted ? `<span class="chip warn">⚠ mixed signals</span>` : '');
+    row.querySelector('.col').appendChild(chips);
+  }
 
   function frame() {
-    if (!cam.videoWidth) return null;                 // no webcam -> text only
+    if (!cam.videoWidth) return null;
     grab.width = cam.videoWidth; grab.height = cam.videoHeight;
     grab.getContext('2d').drawImage(cam, 0, 0);
     return grab.toDataURL('image/jpeg', 0.8);
   }
-  function bubble(text, who) {
-    const d = document.createElement('div');
-    d.className = 'bubble ' + who; d.textContent = text;
-    chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
-    return d;
-  }
-  function pct(x) { return Math.round(x * 100) + '%'; }
-  function showEmotion(r) {
-    const f = r.fused_emotion, t = r.text_emotion, fa = r.face_emotion;
-    emo.classList.remove('hidden');
-    emo.innerHTML =
-      `<div class="big">${EMOJI[f.label] || ''} ${f.label} <span class="pct">${pct(f.confidence)}</span></div>` +
-      `<div class="sub">text: ${t.label} ${pct(t.confidence)} &nbsp;·&nbsp; ` +
-      `face: ${fa.available ? fa.label + ' ' + pct(fa.confidence) : 'no face'}</div>` +
-      (r.conflicted ? `<div class="conflict">⚠ your face and words seem to disagree</div>` : '');
-  }
+
+  let busy = false;
   async function send() {
-    const text = msg.value.trim();
-    if (!text) return;
-    msg.value = '';
-    bubble(text, 'user');
-    const typing = bubble('…', 'bot');
+    const text = ta.value.trim();
+    if (!text || busy) return;
+    busy = true;
+    document.getElementById('welcome')?.remove();
+    ta.value = ''; ta.style.height = 'auto';
+    const me = addRow('me', md(text));
+    const bot = addRow('bot', `<span class="dots"><span></span><span></span><span></span></span>`);
     const f = frame();
     try {
       const res = await fetch('/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({message: text, frames: f ? [f] : [], history}),
       });
       const r = await res.json();
-      typing.textContent = r.reply;
+      bot.querySelector('.bubble').innerHTML = md(r.reply);
+      addChips(me, r);
+      setMood(r.fused_emotion.label, r.fused_emotion.confidence);
       history.push({role: 'user', content: text}, {role: 'assistant', content: r.reply});
-      showEmotion(r);
     } catch (e) {
-      typing.textContent = '⚠ error contacting server: ' + e;
+      bot.querySelector('.bubble').innerHTML = `<em>⚠ couldn't reach the server — is it running?</em>`;
+    } finally {
+      busy = false; main.scrollTop = main.scrollHeight;
     }
   }
+
   document.getElementById('send').onclick = send;
-  msg.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; });
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+  ta.focus();
 </script>
 </body>
 </html>
