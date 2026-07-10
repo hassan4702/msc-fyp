@@ -311,8 +311,8 @@ export default function Page() {
               </Avatar>
 
               <div
-                className={`flex max-w-[80%] flex-col gap-1.5 ${
-                  msg.role === "user" ? "items-end" : ""
+                className={`flex flex-col gap-1.5 ${
+                  msg.role === "user" ? "max-w-[85%] items-end" : "min-w-0 flex-1"
                 }`}
               >
                 <div
