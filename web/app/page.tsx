@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Account } from "@/components/account";
-import { useSession } from "@/lib/auth-client";
+import { signOut, useSession } from "@/lib/auth-client";
 
 const EMO: Record<string, { e: string; c: string }> = {
   anger: { e: "😠", c: "#d9614c" },
@@ -223,6 +223,19 @@ export default function Page() {
                 {c.title}
               </button>
             ))}
+          </div>
+          <div className="border-t p-3">
+            <div className="mb-2 truncate px-1 text-xs text-muted-foreground">
+              {session?.user?.email}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => signOut()}
+              className="w-full justify-start"
+            >
+              Log out
+            </Button>
           </div>
         </aside>
       )}

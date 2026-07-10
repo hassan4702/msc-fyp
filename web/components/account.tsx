@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, signOut, signUp, useSession } from "@/lib/auth-client";
+import { signIn, signUp, useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,20 +23,8 @@ export function Account() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (isPending) return null;
-
-  if (session?.user) {
-    return (
-      <div className="flex items-center gap-2 text-sm">
-        <span className="hidden max-w-[160px] truncate text-muted-foreground sm:inline">
-          {session.user.email}
-        </span>
-        <Button variant="ghost" size="sm" onClick={() => signOut()}>
-          Log out
-        </Button>
-      </div>
-    );
-  }
+  // Signed-in account controls live in the sidebar; header only handles signed-out.
+  if (isPending || session?.user) return null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
