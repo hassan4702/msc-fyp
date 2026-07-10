@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Account } from "@/components/account";
+import { useSession } from "@/lib/auth-client";
 
 const EMO: Record<string, { e: string; c: string }> = {
   anger: { e: "😠", c: "#d9614c" },
@@ -82,6 +83,43 @@ export default function Page() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const history = useRef<{ role: string; content: string }[]>([]);
 
+  const { data: session } = useSession();
+  const authed = !!session?.user;
+  const [conversations, setConversations] = useState<{ id: string; title: string }[]>([]);
+  const [convId, setConvId] = useState<string | null>(null);
+
+  const refreshHistory = async () => {
+    const r = await fetch("/api/history");
+    if (r.ok) setConversations((await r.json()).conversations ?? []);
+  };
+
+  // load / clear the chat list as auth state changes
+  useEffect(() => {
+    if (authed) refreshHistory();
+    else {
+      setConversations([]);
+      setConvId(null);
+    }
+  }, [authed]);
+
+  function newChat() {
+    setMessages([]);
+    setConvId(null);
+    history.current = [];
+  }
+
+  async function loadConversation(id: string) {
+    const r = await fetch(`/api/history?id=${id}`);
+    if (!r.ok) return;
+    const data = (await r.json()) as { messages: { role: "user" | "bot"; content: string }[] };
+    setMessages(data.messages.map((m) => ({ role: m.role, content: m.content })));
+    history.current = data.messages.map((m) => ({
+      role: m.role === "bot" ? "assistant" : "user",
+      content: m.content,
+    }));
+    setConvId(id);
+  }
+
   useEffect(() => {
     let stream: MediaStream | undefined;
     navigator.mediaDevices
@@ -136,6 +174,20 @@ export default function Page() {
       });
       history.current.push({ role: "user", content: text }, { role: "assistant", content: data.reply });
       applyMood(data.fused_emotion.label, data.fused_emotion.confidence);
+      if (authed) {
+        const saved = await fetch("/api/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: convId,
+            turn: { userText: text, botText: data.reply, emotion: data.fused_emotion.label },
+          }),
+        });
+        if (saved.ok && !convId) {
+          setConvId((await saved.json()).conversationId);
+          refreshHistory();
+        }
+      }
     } catch {
       setMessages((m) => {
         const c = [...m];
@@ -148,7 +200,33 @@ export default function Page() {
   }
 
   return (
-    <div className="relative z-10 flex min-h-full flex-1 flex-col">
+    <div className="flex min-h-full flex-1">
+      {authed && (
+        <aside className="hidden w-60 shrink-0 flex-col border-r bg-card/40 sm:flex">
+          <div className="p-3">
+            <Button onClick={newChat} variant="secondary" size="sm" className="w-full justify-start">
+              + New chat
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 pb-3">
+            {conversations.length === 0 && (
+              <p className="px-3 py-2 text-xs text-muted-foreground">No saved chats yet.</p>
+            )}
+            {conversations.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => loadConversation(c.id)}
+                className={`w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-secondary ${
+                  c.id === convId ? "bg-secondary text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                {c.title}
+              </button>
+            ))}
+          </div>
+        </aside>
+      )}
+      <div className="relative z-10 flex min-h-full flex-1 flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4 backdrop-blur-sm">
         <div>
           <div className="font-heading text-2xl font-medium leading-none">
@@ -289,6 +367,7 @@ export default function Page() {
       </div>
 
       <canvas ref={canvasRef} hidden />
+      </div>
     </div>
   );
 }
