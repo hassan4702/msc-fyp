@@ -200,7 +200,7 @@ export default function Page() {
   }
 
   return (
-    <div className="flex min-h-full flex-1">
+    <div className="flex h-dvh">
       {authed && (
         <aside className="hidden w-60 shrink-0 flex-col border-r bg-card/40 sm:flex">
           <div className="p-3">
@@ -226,8 +226,8 @@ export default function Page() {
           </div>
         </aside>
       )}
-      <div className="relative z-10 flex min-h-full flex-1 flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4 backdrop-blur-sm">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b px-6 py-4 backdrop-blur-sm">
         <div>
           <div className="font-heading text-2xl font-medium leading-none">
             Empath<span style={{ color: "var(--emo)" }}>.</span>
@@ -275,7 +275,7 @@ export default function Page() {
         </div>
       </header>
 
-      <main ref={scrollRef} className="flex-1 overflow-y-auto py-8">
+      <main ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-8">
         <div className="mx-auto flex max-w-2xl flex-col gap-5 px-6">
           {messages.length === 0 && (
             <div className="mx-auto my-[12vh] max-w-md text-center animate-in fade-in slide-in-from-bottom-3 duration-700">
@@ -337,7 +337,7 @@ export default function Page() {
         </div>
       </main>
 
-      <div className="px-6 pb-6 pt-2">
+      <div className="shrink-0 px-6 pb-6 pt-2">
         <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-3xl border bg-card p-2 pl-4 shadow-2xl">
           <Textarea
             value={input}
