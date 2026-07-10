@@ -122,7 +122,7 @@ export default function Page() {
     setMessages((m) => [...m, { role: "user", content: text }, { role: "bot", content: "…" }]);
     const f = frame();
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/backend/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, frames: f ? [f] : [], history: history.current }),
