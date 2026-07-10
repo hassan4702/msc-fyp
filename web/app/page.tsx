@@ -276,7 +276,7 @@ export default function Page() {
       </header>
 
       <main ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-8">
-        <div className="mx-auto flex max-w-2xl flex-col gap-5 px-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6">
           {messages.length === 0 && (
             <div className="mx-auto my-[12vh] max-w-md text-center animate-in fade-in slide-in-from-bottom-3 duration-700">
               <h1 className="font-heading text-3xl font-normal leading-tight">How are you feeling?</h1>
@@ -338,7 +338,7 @@ export default function Page() {
       </main>
 
       <div className="shrink-0 px-6 pb-6 pt-2">
-        <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-3xl border bg-card p-2 pl-4 shadow-2xl">
+        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border bg-card p-2 pl-4 shadow-2xl">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -361,7 +361,7 @@ export default function Page() {
             ↑
           </Button>
         </div>
-        <p className="mx-auto mt-2 max-w-2xl text-center text-[11px] text-muted-foreground">
+        <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
           Enter to send · Shift+Enter for a new line · camera optional
         </p>
       </div>
