@@ -188,3 +188,54 @@ class OllamaResponder(Responder):
         )
         resp.raise_for_status()
         return enforce_guardrails(resp.json()["message"]["content"])
+
+
+def ollama_available(url: str, model: str) -> bool:
+    """True if the Ollama server is running and the model is pulled."""
+    try:
+        import httpx
+
+        r = httpx.get(f"{url}/api/tags", timeout=2.5)
+        if r.status_code != 200:
+            return False
+        names = [m.get("name", "") for m in r.json().get("models", [])]
+        base = model.split(":")[0]
+        return any(n == model or n.split(":")[0] == base for n in names)
+    except Exception:
+        return False
+
+
+class GeminiResponder(Responder):
+    """Google Gemini API — fallback responder when Ollama isn't running.
+
+    Only the emotion label + text reach the API; never webcam frames.
+    """
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self.api_key = api_key
+        self.model = model
+
+    def generate(self, message: str, emotion: str, conflicted: bool, history=None) -> str:
+        import httpx
+
+        contents = [
+            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+            for m in (history or [])
+        ]
+        contents.append({"role": "user", "parts": [{"text": message}]})
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        resp = httpx.post(
+            url,
+            headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
+            json={
+                "systemInstruction": {"parts": [{"text": build_system_prompt(emotion, conflicted)}]},
+                "contents": contents,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        try:
+            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            text = "I'm here with you — tell me a little more about how you're feeling."
+        return enforce_guardrails(text)

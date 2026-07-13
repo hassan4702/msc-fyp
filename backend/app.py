@@ -12,7 +12,13 @@ from backend.config import settings
 from backend.models.base import EmotionModel
 from backend.models.face_model import StubFaceEmotionModel
 from backend.models.fusion import ConfidenceGatedFusion, WeightedAverageFusion
-from backend.models.llm import OllamaResponder, TemplateResponder
+from backend.models.base import Responder
+from backend.models.llm import (
+    GeminiResponder,
+    OllamaResponder,
+    TemplateResponder,
+    ollama_available,
+)
 from backend.models.text_model import StubTextEmotionModel
 from backend.schemas import ChatRequest, ChatResponse
 from backend.services.pipeline import EmotionPipeline
@@ -42,6 +48,23 @@ def _load_face_model() -> EmotionModel:
     return StubFaceEmotionModel()
 
 
+def _pick_responder() -> Responder:
+    """auto: Ollama if running with the model, else Gemini, else offline template."""
+    backend = settings.llm_backend
+    if backend == "template":
+        return TemplateResponder()
+    if backend == "ollama":
+        return OllamaResponder(settings.ollama_model, settings.ollama_url)
+    if backend == "gemini" and settings.gemini_api_key:
+        return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
+    # auto
+    if ollama_available(settings.ollama_url, settings.ollama_model):
+        return OllamaResponder(settings.ollama_model, settings.ollama_url)
+    if settings.gemini_api_key:
+        return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
+    return TemplateResponder()
+
+
 def build_pipeline() -> EmotionPipeline:
     """Assemble the pipeline from config. Swap stubs for trained models here."""
     text_model = _load_text_model()
@@ -52,12 +75,7 @@ def build_pipeline() -> EmotionPipeline:
     else:
         fusion = ConfidenceGatedFusion(settings.conflict_threshold)
 
-    if settings.llm_backend == "ollama":
-        responder = OllamaResponder(settings.ollama_model, settings.ollama_url)
-    else:
-        responder = TemplateResponder()
-
-    return EmotionPipeline(text_model, face_model, fusion, responder)
+    return EmotionPipeline(text_model, face_model, fusion, _pick_responder())
 
 
 def create_app() -> FastAPI:
@@ -73,7 +91,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "fusion": settings.fusion_strategy, "llm": settings.llm_backend}
+        return {
+            "status": "ok",
+            "fusion": settings.fusion_strategy,
+            "llm": type(pipeline.responder).__name__,
+        }
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(req: ChatRequest):
