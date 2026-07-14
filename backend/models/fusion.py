@@ -24,6 +24,10 @@ def _combine(text_vec: list[float], face_vec: list[float], w_text: float, w_face
 def _is_conflict(text: EmotionPrediction, face: EmotionPrediction, threshold: float) -> bool:
     if not (text.available and face.available):
         return False
+    # A calm/neutral face (or neutral text) is the default, not a contradiction — a
+    # genuine conflict needs two *different, non-neutral* emotions, both confident.
+    if text.label == "neutral" or face.label == "neutral":
+        return False
     return text.label != face.label and text.confidence >= threshold and face.confidence >= threshold
 
 

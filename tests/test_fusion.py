@@ -43,6 +43,12 @@ def test_no_conflict_when_modalities_agree():
     assert res.conflicted is False
 
 
+def test_neutral_face_is_not_a_conflict():
+    # emotional words + a calm/neutral face is the common case, not a contradiction
+    res = ConfidenceGatedFusion().fuse(_pred("happy", 0.9, "text"), _pred("neutral", 0.9, "face"))
+    assert res.conflicted is False
+
+
 def test_confidence_gating_favours_more_confident_modality():
     text = _pred("happy", 0.9, "text")
     face = _pred("sad", 0.5, "face")
