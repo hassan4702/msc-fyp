@@ -190,19 +190,37 @@ class OllamaResponder(Responder):
         return enforce_guardrails(resp.json()["message"]["content"])
 
 
-def ollama_available(url: str, model: str) -> bool:
-    """True if the Ollama server is running and the model is pulled."""
+def ollama_models(url: str) -> list[str]:
+    """Names of the models Ollama currently has pulled ([] if unreachable)."""
     try:
         import httpx
 
         r = httpx.get(f"{url}/api/tags", timeout=2.5)
         if r.status_code != 200:
-            return False
-        names = [m.get("name", "") for m in r.json().get("models", [])]
-        base = model.split(":")[0]
-        return any(n == model or n.split(":")[0] == base for n in names)
+            return []
+        return [m.get("name", "") for m in r.json().get("models", []) if m.get("name")]
     except Exception:
-        return False
+        return []
+
+
+def pick_ollama_model(url: str, preferred: str = "") -> str:
+    """Choose a usable Ollama chat model with zero config: the preferred model if it's
+    pulled, otherwise the first non-embedding model Ollama has. "" if none/unreachable."""
+    names = ollama_models(url)
+    if not names:
+        return ""
+    base = preferred.split(":")[0]
+    for n in names:  # honour the preferred model if it's installed
+        if n == preferred or (base and n.split(":")[0] == base):
+            return n
+    for n in names:  # else the first real chat model (skip embedding-only models)
+        if "embed" not in n.lower():
+            return n
+    return ""
+
+
+def ollama_available(url: str, model: str = "") -> bool:
+    return bool(pick_ollama_model(url, model))
 
 
 class GeminiResponder(Responder):

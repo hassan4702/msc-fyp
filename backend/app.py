@@ -17,7 +17,7 @@ from backend.models.llm import (
     GeminiResponder,
     OllamaResponder,
     TemplateResponder,
-    ollama_available,
+    pick_ollama_model,
 )
 from backend.models.text_model import StubTextEmotionModel
 from backend.schemas import ChatRequest, ChatResponse
@@ -49,18 +49,17 @@ def _load_face_model() -> EmotionModel:
 
 
 def _pick_responder() -> Responder:
-    """auto: Ollama if running with the model, else Gemini, else offline template."""
+    """auto: Ollama with ANY pulled chat model, else Gemini, else offline template."""
     backend = settings.llm_backend
     if backend == "template":
         return TemplateResponder()
-    if backend == "ollama":
-        return OllamaResponder(settings.ollama_model, settings.ollama_url)
     if backend == "gemini" and settings.gemini_api_key:
         return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
-    # auto
-    if ollama_available(settings.ollama_url, settings.ollama_model):
-        return OllamaResponder(settings.ollama_model, settings.ollama_url)
-    if settings.gemini_api_key:
+    if backend in ("auto", "ollama"):
+        model = pick_ollama_model(settings.ollama_url, settings.ollama_model)
+        if model:
+            return OllamaResponder(model, settings.ollama_url)
+    if backend in ("auto", "gemini") and settings.gemini_api_key:
         return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
     return TemplateResponder()
 
@@ -95,6 +94,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "fusion": settings.fusion_strategy,
             "llm": type(pipeline.responder).__name__,
+            "model": getattr(pipeline.responder, "model", None),
         }
 
     @app.post("/chat", response_model=ChatResponse)

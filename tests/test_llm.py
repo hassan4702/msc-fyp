@@ -13,3 +13,15 @@ def test_system_prompt_carries_rules_and_emotion():
     p = build_system_prompt("sad", conflicted=False)
     assert "ABSOLUTE RULES" in p
     assert "sad" in p
+
+
+def test_pick_ollama_model(monkeypatch):
+    import backend.models.llm as llm
+
+    monkeypatch.setattr(llm, "ollama_models", lambda url: ["nomic-embed-text:latest", "llama3:8b", "qwen2.5:7b"])
+    assert llm.pick_ollama_model("x", "qwen2.5:7b") == "qwen2.5:7b"  # preferred is installed
+    assert llm.pick_ollama_model("x", "mistral") == "llama3:8b"      # not installed -> first non-embedding
+    monkeypatch.setattr(llm, "ollama_models", lambda url: ["mxbai-embed-large:latest"])
+    assert llm.pick_ollama_model("x", "") == ""                      # only embedding models
+    monkeypatch.setattr(llm, "ollama_models", lambda url: [])
+    assert llm.pick_ollama_model("x", "") == ""                      # ollama down
