@@ -29,7 +29,7 @@ class Settings:
     ollama_model: str = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
-    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     text_model_dir: str = os.environ.get("TEXT_MODEL_DIR", "")  # empty -> keyword stub
     face_model_path: str = os.environ.get("FACE_MODEL_PATH", "")  # empty -> stub
     fusion_strategy: str = os.environ.get("FUSION_STRATEGY", "confidence_gated")  # weighted_average | confidence_gated
