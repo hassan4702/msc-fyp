@@ -36,6 +36,13 @@ ollama pull qwen2.5:7b
 
 ---
 
+## Windows: just double-click `run.bat`
+
+On Windows, `run.bat` does Option A automatically: it creates the Python
+environment on first run, installs deps, and starts the chatbot at
+http://localhost:8000. You still need Python 3.12 installed, the weights in
+`models/weights/`, and (for real replies) Ollama or a Gemini key.
+
 ## Option A — chatbot only (simplest, no login)
 
 ```bash
