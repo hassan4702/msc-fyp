@@ -43,3 +43,40 @@ def preprocess_gray(face_48: "list | object") -> "torch.Tensor":
         t = t.unsqueeze(0).unsqueeze(0)
     t = (t / 255.0 - NORM_MEAN) / NORM_STD
     return t
+
+
+# ---------------------------------------------------------------------------
+# ResNet-18 backbone (the current model; FaceNet above is the from-scratch
+# baseline it replaced, kept because §9 reports both).
+# ---------------------------------------------------------------------------
+RESNET_INPUT_SIZE = 224
+# ImageNet statistics — required, since the backbone's pretrained filters expect them.
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+def build_resnet18(num_classes: int = 7, pretrained: bool = True) -> nn.Module:
+    """ImageNet-pretrained ResNet-18 with a fresh `num_classes` head."""
+    from torchvision.models import ResNet18_Weights, resnet18
+
+    model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    return model
+
+
+def preprocess_resnet(face_gray: "object") -> "torch.Tensor":
+    """Grayscale face crop (any size, 0-255) -> normalised [1,3,224,224] tensor.
+
+    Grayscale is replicated across the three channels; the backbone is pretrained on
+    RGB and this is the standard way to feed it single-channel input.
+    """
+    import cv2
+    import numpy as np
+
+    arr = np.asarray(face_gray, dtype=np.uint8)
+    resized = cv2.resize(arr, (RESNET_INPUT_SIZE, RESNET_INPUT_SIZE), interpolation=cv2.INTER_LINEAR)
+    t = torch.as_tensor(resized, dtype=torch.float32).div_(255.0)
+    t = t.unsqueeze(0).repeat(3, 1, 1)
+    mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+    std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    return ((t - mean) / std).unsqueeze(0)

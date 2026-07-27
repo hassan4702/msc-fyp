@@ -105,7 +105,7 @@ returns a reply plus the detected emotions.
 ollama pull qwen2.5:7b
 LLM_BACKEND=ollama \
 TEXT_MODEL_DIR=models/weights/text \
-FACE_MODEL_PATH=models/weights/face/face_net.pt \
+FACE_MODEL_PATH=models/weights/face/resnet18.pt \
   uvicorn backend.app:app
 ```
 

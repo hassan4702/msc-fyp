@@ -43,6 +43,9 @@ def main():
 
     from backend.models.face_net import INPUT_SIZE, NORM_MEAN, NORM_STD, FaceNet
 
+    random.seed(0)
+    torch.manual_seed(0)  # augmentation, init and shuffle were all unseeded -> runs unreproducible
+
     raw = load_dataset(args.dataset)
     names = raw["train"].features["label"].names
     print(f"dataset label order: {names}")
@@ -68,7 +71,9 @@ def main():
                 if random.random() < 0.5:
                     img = img.transpose(Image.FLIP_LEFT_RIGHT)
                 if random.random() < 0.5:
-                    img = img.rotate(random.uniform(-12, 12))
+                    # fillcolor: the default black corners are -1.0 after normalisation, a value
+                    # no real face produces; the image mean keeps them in-distribution.
+                    img = img.rotate(random.uniform(-12, 12), fillcolor=int(np.asarray(img).mean()))
             arr = np.asarray(img, dtype=np.float32)
             x = torch.from_numpy((arr / 255.0 - NORM_MEAN) / NORM_STD).unsqueeze(0)
             return x, to_canonical(ex["label"])

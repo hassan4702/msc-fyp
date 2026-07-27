@@ -24,7 +24,15 @@ git clone https://github.com/hassan4702/msc-fyp.git
 cd msc-fyp
 # extract the weights you were sent -> creates models/weights/{text,face}
 tar xzf /path/to/msc-fyp-weights.tar.gz -C models
+
+# the face detector's model file (~230 KB, not in the repo and not in the tarball)
+mkdir -p models/weights/mediapipe && curl -sSL -o models/weights/mediapipe/blaze_face_short_range.tflite \
+  https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite
 ```
+
+Without that `.tflite` the face channel cannot start, and the backend falls back to a placeholder
+model. Check with `curl localhost:8000/health`: `"face"` must read `CnnFaceEmotionModel`, not
+`StubFaceEmotionModel`.
 
 ## One-time setup
 
@@ -48,7 +56,7 @@ http://localhost:8000. You still need Python 3.12 installed, the weights in
 ```bash
 LLM_BACKEND=ollama \
 TEXT_MODEL_DIR=models/weights/text \
-FACE_MODEL_PATH=models/weights/face/face_net.pt \
+FACE_MODEL_PATH=models/weights/face/resnet18.pt \
   uvicorn backend.app:app
 ```
 

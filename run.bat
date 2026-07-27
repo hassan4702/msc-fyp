@@ -38,7 +38,14 @@ if not exist ".venv\Scripts\python.exe" (
 REM ---- 3. config: trained models + auto LLM (Ollama, else Gemini, else template) ----
 set "LLM_BACKEND=auto"
 set "TEXT_MODEL_DIR=models\weights\text"
-set "FACE_MODEL_PATH=models\weights\face\face_net.pt"
+set "FACE_MODEL_PATH=models\weights\face\resnet18.pt"
+
+if not exist "models\weights\face\resnet18.pt" (
+  echo(
+  echo  [note] Face model not found - the face channel will report a placeholder.
+  echo         Check GET /health: "face" should read CnnFaceEmotionModel, not Stub.
+  echo(
+)
 
 if not exist "models\weights\text\model.safetensors" (
   echo(
