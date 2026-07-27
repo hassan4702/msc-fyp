@@ -129,7 +129,13 @@ def main():
     parser.add_argument("--videos-dir", default="data/meld/MELD_raw/videos")
     parser.add_argument("--labels-dir", default="data/meld/labels")
     parser.add_argument("--text-model-dir", default="models/weights/text")
-    parser.add_argument("--face-model-path", default="models/weights/face/face_net.pt")
+    parser.add_argument("--face-model-path", default="models/weights/face/resnet18.pt")
+    parser.add_argument(
+        "--arbiter-split", default="train",
+        help='Split the learned arbiter trains on. Use "dev" when the face model was itself '
+             'fine-tuned on MELD train — otherwise the arbiter learns from face predictions on '
+             'data the face model memorised, over-trusts the face channel, and collapses on test.',
+    )
     parser.add_argument("--limit", type=int, default=0, help="cap utterances per split (0 = all)")
     args = parser.parse_args()
 
@@ -141,8 +147,8 @@ def main():
     text_model = TransformerTextEmotionModel(args.text_model_dir)
     face_model = CnnFaceEmotionModel(args.face_model_path)
 
-    print("building train records (for the arbiter)...")
-    train_rows = load_split_rows(args.labels_dir, args.videos_dir, "train", args.limit)
+    print(f"building {args.arbiter_split} records (for the arbiter)...")
+    train_rows = load_split_rows(args.labels_dir, args.videos_dir, args.arbiter_split, args.limit)
     train_records = build_records(train_rows, text_model, face_model, cv2)
     print("building test records...")
     test_rows = load_split_rows(args.labels_dir, args.videos_dir, "test", args.limit)

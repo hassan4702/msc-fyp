@@ -68,19 +68,40 @@ def _ece_from_logits(logits_list, labels) -> float:
     return expected_calibration_error(confidences, correct)
 
 
-def _calibrate(name: str, directory: str, logits_list, labels):
-    ece_before = _ece_from_logits(logits_list, labels)
-    temperature = fit_temperature(logits_list, labels)
-    # ECE after scaling: recompute confidences with the fitted T.
+def _ece_at(logits_list, labels, temperature: float) -> float:
     conf, correct = [], []
     for logits, label in zip(logits_list, labels):
         probs = scores_from_logits(logits, temperature)
         pred = max(range(len(EMOTIONS)), key=lambda i: probs[EMOTIONS[i]])
         conf.append(probs[EMOTIONS[pred]])
         correct.append(pred == label)
-    ece_after = expected_calibration_error(conf, correct)
+    return expected_calibration_error(conf, correct)
+
+
+def _calibrate(name: str, directory: str, logits_list, labels):
+    """Fit T on half the split, then only keep it if it improves ECE on the other half.
+
+    The hold-out check is not ceremony. The validation split is also the split the best
+    checkpoint was selected on, so the model is mildly overfit to it and the NLL-optimal
+    temperature overshoots: for the face model, the fitted T=1.29 gave ECE 0.069 on
+    held-out data where T=1.0 gave 0.028. Fitting alone would have shipped a temperature
+    that makes confidences worse — which is exactly what the previous version did.
+    """
+    mid = len(logits_list) // 2
+    fit_x, fit_y = logits_list[:mid], labels[:mid]
+    held_x, held_y = logits_list[mid:], labels[mid:]
+
+    temperature = fit_temperature(fit_x, fit_y)
+    ece_plain = _ece_at(held_x, held_y, 1.0)
+    ece_scaled = _ece_at(held_x, held_y, temperature)
+    if ece_scaled >= ece_plain:
+        print(f"[{name}] fitted T={temperature:.3f} REJECTED "
+              f"(held-out ECE {ece_plain:.4f} at T=1.0 vs {ece_scaled:.4f} scaled) -> keeping T=1.0")
+        temperature, ece_scaled = 1.0, ece_plain
+
     Path(directory, "calibration.json").write_text(json.dumps({"temperature": temperature}, indent=2))
-    print(f"[{name}] T={temperature:.3f} | ECE {ece_before:.4f} -> {ece_after:.4f} | wrote {directory}/calibration.json")
+    print(f"[{name}] T={temperature:.3f} | held-out ECE {ece_plain:.4f} -> {ece_scaled:.4f} "
+          f"| wrote {directory}/calibration.json")
 
 
 def _collect_text(model_dir: str):
@@ -106,35 +127,44 @@ def _collect_text(model_dir: str):
 
 
 def _collect_face(model_path: str):
-    import numpy as np
+    """Face logits on the validation split, through the *deployed* preprocessing.
+
+    Critically, this reuses the same BlazeFace crops the model was trained on
+    (`training.train_face_resnet._load_crops`). The previous version fitted the
+    temperature on raw FER thumbnails while inference ran on Haar boxes, so the
+    fitted value described a pipeline that never actually ran.
+
+    Images leaked from the train split are dropped, or the confidences being
+    calibrated would partly be confidences on memorised examples.
+    """
+    import hashlib
+
     import torch
-    from datasets import load_dataset
 
-    from backend.models.face_net import INPUT_SIZE, NORM_MEAN, NORM_STD, FaceNet
-    from training.fer2013 import FER_TO_CANONICAL
+    from backend.models.face_net import build_resnet18, preprocess_resnet
+    from training.train_face_resnet import _load_crops
 
-    model = FaceNet()
+    model = build_resnet18(pretrained=False)
     model.load_state_dict(torch.load(model_path, map_location="cpu"))
     model.eval()
-    ds = load_dataset("Aaryan333/fer2013_train_publicTest_privateTest", split="publicTest")
-    names = ds.features["label"].names
+
+    splits = _load_crops("Aaryan333/fer2013_train_publicTest_privateTest", "data/fer_crops.npz")
+    train_hashes = {hashlib.md5(a.tobytes()).hexdigest() for a in splits["train"][0]}
+    images, labels_all = splits["val"]
     logits_list, labels = [], []
     with torch.no_grad():
-        for ex in ds:
-            img = ex["image"].convert("L")
-            if img.size != (INPUT_SIZE, INPUT_SIZE):
-                img = img.resize((INPUT_SIZE, INPUT_SIZE))
-            arr = np.asarray(img, dtype=np.float32)
-            x = torch.from_numpy((arr / 255.0 - NORM_MEAN) / NORM_STD).unsqueeze(0).unsqueeze(0)
-            logits_list.append(model(x)[0].tolist())
-            labels.append(EMOTIONS.index(FER_TO_CANONICAL[names[ex["label"]].lower()]))
+        for img, label in zip(images, labels_all):
+            if hashlib.md5(img.tobytes()).hexdigest() in train_hashes:
+                continue
+            logits_list.append(model(preprocess_resnet(img))[0].tolist())
+            labels.append(label)
     return logits_list, labels
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--text-model-dir", default="models/weights/text")
-    parser.add_argument("--face-model-path", default="models/weights/face/face_net.pt")
+    parser.add_argument("--face-model-path", default="models/weights/face/resnet18.pt")
     args = parser.parse_args()
 
     if Path(args.text_model_dir).is_dir():
