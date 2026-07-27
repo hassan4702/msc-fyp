@@ -118,10 +118,13 @@ Five models are involved. **Three were trained for this project**; two are used 
 | Role | Model | Trained here? | Data |
 |------|-------|---------------|------|
 | Text → emotion | DistilBERT (`distilbert-base-uncased`) | ✅ fine-tuned | GoEmotions |
-| Face detection | OpenCV Haar cascade | ❌ built-in | — |
-| Face → emotion | Custom CNN (`FaceNet`) | ✅ from scratch | FER-2013 |
+| Face detection | MediaPipe BlazeFace (short-range) | ❌ off-the-shelf | — |
+| Face → emotion | ResNet-18, ImageNet-pretrained | ✅ fine-tuned | FER-2013 |
 | Fusion arbiter | Logistic Regression | ✅ trained | MELD |
 | Reply generation | Qwen2.5-7B (Ollama) / Gemini 3.5 Flash | ❌ off-the-shelf | — |
+
+An earlier from-scratch CNN (`FaceNet`) and an OpenCV Haar cascade filled the two face roles;
+both were replaced, and §9 reports the before/after because the comparison is a result.
 
 ### 5.1 Text emotion model
 - **What:** DistilBERT (a smaller, faster BERT) fine-tuned to classify a message into the 7 emotions.
@@ -135,29 +138,68 @@ Five models are involved. **Three were trained for this project**; two are used 
 - **Why DistilBERT:** light enough to run on a weak deployment machine, close to BERT accuracy.
 
 ### 5.2 Face emotion model
-- **What:** a compact custom CNN (`backend/models/face_net.py`) — four conv blocks over a 48×48
-  grayscale face → 7 emotions. Deliberately small to run on CPU on a weak device.
-- **How:** trained from scratch on FER-2013 (via the `Aaryan333/...` HF mirror: 28,709 train /
-  3,589 validation / 3,589 test, the standard FER split). PIL augmentation (flip + small
-  rotation), class-weighted loss, best-on-validation checkpointing. Labels mapped **by name**
-  (HF mirrors disagree on index order). Code: `training/train_face.py`, mapping in
-  `training/fer2013.py`.
-- **Result:** test **macro-F1 0.581**, accuracy 0.597. Per-class F1: happy 0.84, surprise 0.75,
-  disgust 0.60, neutral 0.57, anger 0.51, sad 0.47, **fear 0.33** (fear is the classic FER weak
-  spot). This is a legitimate from-scratch FER baseline; facial emotion in the wild is genuinely
-  hard, which caps this channel.
-- **At runtime:** OpenCV's Haar cascade finds the face in the webcam frame; the crop is resized
-  to 48×48 and classified. If no face is detected, the channel reports "unavailable" and fusion
-  falls back to text (`backend/models/face_model.py`).
+- **What:** an ImageNet-pretrained **ResNet-18** (`backend/models/face_net.py:build_resnet18`),
+  fine-tuned on FER-2013, over a 224×224 face crop → 7 emotions. It replaced a from-scratch
+  0.98M-parameter CNN (`FaceNet`, still in the same file) which is retained as the baseline the
+  results below are measured against.
+- **How:** fine-tuned on FER-2013 (via the `Aaryan333/...` HF mirror: 28,709 train / 3,589
+  validation / 3,589 test, the standard FER split), AdamW at 3e-4 with **cosine decay**, 15
+  epochs, class-weighted loss with label smoothing, flip / rotation / brightness augmentation,
+  best-on-validation checkpointing, seeded. Labels mapped **by name** (HF mirrors disagree on
+  index order). Code: `training/train_face_resnet.py`, mapping in `training/fer2013.py`.
+- **Crops come from the detector, at training time too.** Every image — train and inference
+  alike — is framed by `backend/models/face_detect.py`. See §13 for why that is not a detail.
+
+**Result on de-duplicated privateTest (3,301 images), against the from-scratch baseline:**
+
+| | macro-F1 | accuracy |
+|---|---|---|
+| FaceNet, from scratch (previous) | 0.540 | 0.580 |
+| **ResNet-18, fine-tuned (current)** | **0.651** | **0.691** |
+
+Per-class F1: happy 0.90, surprise 0.78, neutral 0.68, anger 0.59, sad 0.56, **fear 0.55**,
+disgust 0.50. Fear — the classic FER-2013 weak spot, and 0.32 under the old model — is the
+single largest per-class gain. Accuracy of 0.691 is **above the ~65% human benchmark** on
+FER-2013 and within a few points of the ~73% published state of the art.
+- **Why "de-duplicated" — FER-2013 leaks.** 288 of the 3,589 privateTest images (**8.02%**) and
+  280 of the validation images (7.80%) are pixel-identical to a training image, found by MD5 of
+  the raw pixel buffer. The old model scored **0.781 accuracy on the leaked rows** against 0.580
+  on the rest, so an undeduplicated figure is part memorisation — worth 1.6pp of accuracy and
+  4.1pp of macro-F1 on its own. This is a defect of the FER-2013 distribution, not of the
+  training code. `training/train_face_resnet.py` drops the leaked rows from validation and test
+  before scoring, so **every FER number in this document is on clean data**.
+- **Why a pretrained backbone.** Training 0.98M parameters from scratch on 28k 48×48 grayscale
+  images caps out around the mid-50s; that was the binding limit, not the fusion design. The
+  deployment-cost objection did not survive measurement — ResNet-18 runs at **7.7 ms/frame on 4
+  CPU threads**, against ~23 ms/frame for the Haar cascade it replaced.
+- **At runtime:** MediaPipe BlazeFace finds the face in the webcam frame, the box is expanded by
+  a 25% margin, and the crop is resized to 224×224 and classified. The frame is decoded in
+  **colour** for detection — BlazeFace loses 22.6 points of coverage on grayscale input (96.3% →
+  73.7%, measured on 300 MELD frames) — and the crop handed to the classifier is grayscale. If no
+  face is detected the channel reports "unavailable" and fusion falls back to text
+  (`backend/models/face_model.py`).
 
 ### 5.3 Calibration
 Neural nets are overconfident, and the two models' confidences must be **comparable** before
 one can be trusted over the other. Each model's logits are **temperature-scaled** — a single
 fitted number per model that softens overconfidence without changing the predicted label.
-- Text: **T = 1.19** (expected calibration error 0.087 → **0.046**, nearly halved).
-- Face: **T = 1.05** (already well-calibrated, ECE ~0.02).
-- Code: `training/calibrate.py`. Values stored in `<model>/calibration.json`; the wrappers load
-  them automatically.
+**A fitted temperature is now only adopted if it earns its place.** `training/calibrate.py` fits
+T on half the validation split and then checks ECE on the other half; if scaling does not improve
+held-out ECE, it keeps T = 1.0. This is not ceremony — it caught a real problem. The validation
+split is also the split the best checkpoint is selected on, so the model is mildly overfit to it
+and the NLL-optimal temperature overshoots:
+
+| Model | fitted T | held-out ECE at T=1.0 | at fitted T | adopted |
+|---|---|---|---|---|
+| Text (DistilBERT) | 1.169 | 0.0964 | **0.0499** | ✅ T = 1.169 |
+| Face (ResNet-18) | 1.268 | **0.0477** | 0.0513 | ❌ rejected → T = 1.0 |
+
+The text model is genuinely overconfident and temperature scaling nearly halves its ECE. The face
+model is already well calibrated, and the fitted temperature made it *worse* — on the full test
+split, T=1.29 gave ECE 0.069 where T=1.0 gave 0.028. The previous version of this file claimed a
+calibration benefit for the face channel; that claim was wrong, and the earlier shipped value was
+fitted on raw FER thumbnails while inference ran Haar boxes, so it described a pipeline that never
+actually ran. Values stored in `<model>/calibration.json`; the wrappers load them automatically.
 
 ---
 
@@ -221,37 +263,121 @@ The fused emotion is injected into a language model's system prompt to shape the
 Two tracks, matching the research questions. Metric: **macro-averaged F1** over the 7 classes
 (handles class imbalance), reported with per-class breakdowns and against baselines.
 
-### RQ1 — MELD test set (2,610 utterances), face-detection coverage 88.7%
+Four pipelines are reported, because the differences between them are themselves results.
+**(A)** the original Haar + from-scratch CNN with the crop-framing bug; **(B)** the same models
+with the crop fix of §13; **(C)** BlazeFace + ResNet-18; **(D)** (C) additionally fine-tuned on
+MELD's own train split (`training/finetune_meld.py`).
 
-| System | macro-F1 |
-|--------|----------|
-| text-only | **0.268** |
-| face-only | 0.132 |
-| majority-class | 0.093 |
-| fused: weighted-average | 0.266 |
-| fused: confidence-gated | 0.262 |
-| fused: learned arbiter | **0.269** |
+### RQ1 — MELD test set (2,610 utterances)
 
-### RQ2 — conflict subset (2,025 / 2,610 = 77.6% where the channels disagree)
+| System | (A) original | (B) crop fixed | (C) ResNet-18 | (D) + MELD-tuned |
+|--------|--------------|----------------|---------------|------------------|
+| text-only | 0.2678 | 0.2678 | 0.2678 | 0.2678 |
+| face-only | 0.1318 | 0.1398 | 0.1210 | **0.1506** |
+| majority-class | 0.0928 | 0.0928 | 0.0928 | 0.0928 |
+| fused: weighted-average | 0.2662 | 0.2655 | 0.2505 | 0.2547 |
+| fused: confidence-gated | 0.2618 | 0.2640 | 0.2451 | 0.2586 |
+| fused: learned arbiter *(train)* | 0.2693 | **0.2751** | 0.2679 | 0.1954 † |
+| fused: learned arbiter *(dev)* | — | — | 0.2323 | 0.2314 |
+| *face-detection coverage* | *88.7%* | *88.7%* | *96.6%* | *96.6%* |
 
-| System | macro-F1 |
-|--------|----------|
-| fused: learned arbiter | **0.263** |
-| text-only | 0.256 |
-| fused: weighted-average | 0.255 |
-| fused: confidence-gated | 0.249 |
-| face-only | 0.093 |
+### RQ2 — conflict subset (where the two channels disagree)
+
+| System | (A) original | (B) crop fixed | (C) ResNet-18 | (D) + MELD-tuned |
+|--------|--------------|----------------|---------------|------------------|
+| text-only | 0.2561 | 0.2567 | 0.2591 | 0.2691 |
+| fused: learned arbiter *(train)* | 0.2630 | **0.2648** | 0.2574 | 0.1754 † |
+| fused: weighted-average | 0.2551 | 0.2542 | 0.2425 | 0.2535 |
+| fused: confidence-gated | 0.2491 | 0.2520 | 0.2359 | 0.2571 |
+| face-only | 0.0930 | 0.1006 | 0.0930 | 0.1173 |
+| *subset size* | *2,025* | *1,969* | *2,167* | *2,090* |
+
+### † The arbiter cannot be trained on a split the face model was fine-tuned on
+
+The (D) figures marked † are **invalid, and are reported only to document the trap**. The arbiter
+trains on MELD *train* records; in (D) the face model was itself fine-tuned on MELD *train*, so
+the arbiter learns from face predictions on utterances the face model had memorised (its training
+loss fell to 0.89). It over-trusts the face channel and then collapses on test: 0.2679 → 0.1954.
+Pipelines (A)–(C) are immune because those face models never saw MELD — which is precisely what
+makes the bug easy to miss the moment in-domain fine-tuning is introduced.
+`evaluation/evaluate_meld.py --arbiter-split dev` trains the arbiter on a split the face model
+saw only for checkpoint selection.
+
+That fix gives 0.2314, still below (C)'s 0.2679 — which raises a second question: is that the
+leak, or simply that dev holds 9× less arbiter training data (1,109 vs 9,989 records)? Running
+**(C) under the same dev arbiter** isolates it:
+
+| arbiter training split | (C) ResNet-18 | (D) MELD-tuned |
+|---|---|---|
+| train — 9,989 records | 0.2679 | 0.1954 † leaked |
+| dev — 1,109 records | 0.2323 | 0.2314 |
+
+Under matched conditions the two are **identical within noise** (0.2323 vs 0.2314). The drop was
+arbiter data starvation, not the fine-tuned face model. A separate lesson falls out of the same
+table: the learned arbiter is strongly **data-hungry**, losing 3.5pp when its training set shrinks
+9× — worth stating, since the arbiter is this project's RQ2 contribution.
+
+### The finding that matters most for RQ1
+
+**Improving the face channel by 25% relative (0.1210 → 0.1506 macro-F1) produced no measurable
+improvement in fusion** (0.2323 → 0.2314 under a matched arbiter), and no pipeline's fusion beat
+text-only at 0.2678. The face channel is too weak relative to text for its quality to change the
+outcome at these levels. That is the honest answer to RQ1 on MELD, and it is a stronger claim than
+any single pipeline could support, because it now holds across four of them — including one whose
+face channel was trained on MELD itself.
+
+**Text-only is identical to four decimals across all three runs** — the control confirming that
+only the face path changed.
+
+### The uncomfortable finding: in-domain gains did not transfer
+
+Pipeline (C) is **+11.1pp macro-F1 on FER-2013** (0.540 → 0.651, §5.2) and detects 8pp more faces,
+yet it is **worse on MELD** (face-only 0.140 → 0.121). That is not a bug, and it is not the
+coverage change either — the obvious explanation, that Haar's 11% missed faces were scored as
+"neutral" and MELD is 48% neutral, was tested and **refuted**: restricted to the 2,242 utterances
+where *both* pipelines detect a face, so neither gets a free "neutral", the old model still leads
+**0.1305 to 0.1128**.
+
+The honest reading is that the larger pretrained model fits FER-2013's specific distribution
+(posed, frontal, 48×48 grayscale stills) more tightly, and therefore **generalises less well** to
+MELD's very different distribution (TV dialogue frames, motion blur, profiles, cinematic
+lighting). Higher in-domain accuracy bought worse cross-corpus transfer.
+
+**Pipeline (D) confirms that diagnosis by reversing it.** Fine-tuning the same ResNet-18 on MELD's
+own train split lifts face-only from 0.1210 to **0.1506** — the best face channel of any pipeline
+here, and above the from-scratch model it had been losing to. So the (C) regression was domain
+shift, exactly as claimed, and not a defect in the backbone.
+
+**Which model ships: (C), not (D).** (D) is better *on MELD* and is the right choice for anyone
+reporting MELD numbers. But the product is a **webcam** — a large, frontal, well-lit face, much
+closer to FER-2013's setting than to TV stills — and (D) buys its MELD gain by specialising away
+from that. (D) also delivers **no fusion improvement whatsoever** (see above), so it would trade
+deployment-domain accuracy for nothing the system actually uses. `resnet18_meld.pt` is therefore
+kept as an evaluated variant, not promoted. That reasoning is a judgement about domains, not a
+measurement: **RQ3's user study is the only part of this project that measures the face channel in
+its actual deployment domain**, and it is what would settle the choice properly.
 
 ### Findings (stated honestly)
 - **Naive fusion does not beat text-only** — adding the weak face channel *slightly degrades*
-  the strong text channel.
-- **Only the learned arbiter avoids degradation**, marginally exceeding text-only overall and
-  **winning clearly on the conflict subset**. So a *learned* conflict policy beats naive
-  averaging and beats text-alone — direct evidence for RQ2.
-- **Critical caveat:** these are **cross-corpus transfer** numbers — the models were trained on
-  GoEmotions / FER-2013 and applied to MELD **with no MELD fine-tuning**. That is why absolute
-  F1 is ~0.27 (well below in-domain MELD text SOTA). This measures *generalisation*, not
-  in-domain performance. In-domain fine-tuning is the natural follow-up.
+  the strong text channel. This holds across all three pipelines, so it is a property of the
+  fusion design and the channel-strength imbalance, not of any one face model.
+- **The learned arbiter is the only strategy that avoids degradation.** In (A) and (B) it exceeds
+  text-only overall and wins on the conflict subset; in (C) it matches text-only where naive
+  fusion falls 1.7–2.3pp below it. That is the RQ2 evidence: a *learned* conflict policy is what
+  stops a weak second channel from doing harm.
+- **The binding constraint is face-channel quality, not the fusion rule** — and even that has a
+  ceiling. Face-only sits at 0.12–0.15 macro-F1 against a 0.093 majority baseline and a ~0.14
+  chance level for 7 classes. Raising it 25% relative, via in-domain fine-tuning, changed fusion
+  by 0.001. No fusion policy extracts much from a channel this close to chance, which is why
+  "does the face help?" cannot be answered cleanly on MELD at all.
+- **A learned arbiter must not be trained on data its input models were trained on.** Fine-tuning
+  the face channel in-domain silently contaminated the arbiter's training set and cost 7pp on
+  test (§9 †). The fix is a one-flag change; noticing it required suspecting a result that had
+  improved on every other axis.
+- **Cross-corpus vs in-domain:** (A)–(C) are **transfer** numbers — trained on GoEmotions /
+  FER-2013, applied to MELD with no MELD fine-tuning — which is why absolute F1 sits near 0.27,
+  well below in-domain MELD text SOTA. (D) closes that gap for the face channel specifically, and
+  demonstrates the gap was real: face-only rises 0.1210 → 0.1506 from in-domain training alone.
 - Full write-up: `evaluation/results/meld_results.md`; harness: `evaluation/evaluate_meld.py`.
 
 ---
@@ -323,6 +449,47 @@ These are real problems hit during the build — good evidence of engineering ju
   to `gemini-3.5-flash`, which works.
 - **Webcam not attaching (React)** — the `<video>` was conditionally rendered on a state that
   only flipped after the stream attached; fixed by always mounting it.
+- **The face channel was classifying a different crop than it was trained on.** Training fed the
+  model the full 48×48 FER-2013 thumbnail; inference fed it the raw Haar bounding box, which is
+  ~0.807× that framing. Measured on 3,589 held-out FER images: accuracy 0.583 → 0.523 and
+  macro-F1 0.566 → 0.491 from the framing alone. The first fix widened the Haar box by 1/8 per
+  side; the structural fix was to move detection into `backend/models/face_detect.py` and have
+  **the training script and the inference wrapper call the same function**, so the two framings
+  cannot drift apart again. Nothing in the type system or the tests catches a disagreement in
+  image geometry — only shared code does.
+- **Detecting on grayscale threw away a fifth of the faces.** The pipeline decoded webcam frames
+  with `IMREAD_GRAYSCALE` because the classifier wants grayscale — so the *detector* never saw
+  colour either. BlazeFace is trained on colour and its coverage on the same 300 MELD frames is
+  **96.3% on colour against 73.7% on grayscale**. Fixed by decoding in colour, detecting in
+  colour, and converting to grayscale only for the classifier crop. The lesson: an optimisation
+  made for one stage of a pipeline silently degraded an earlier stage.
+- **Face alignment was investigated and rejected on evidence.** Warping the face onto canonical
+  eye positions is standard FER preprocessing, so it was the obvious next step. MediaPipe's
+  landmarker reaches 93% coverage on FER-2013 thumbnails but only **40.3% on MELD video frames**
+  (48.3% even when run on a pre-detected crop). Aligning 93% of training images while being able
+  to align under half of inference frames would have re-created the very train/inference mismatch
+  described two bullets above. Measured first, not built — the cheapest engineering decision in
+  this project.
+- **A fitted calibration temperature made the model worse.** See §5.3: the face model's fitted
+  T=1.29 raised held-out ECE from 0.028 to 0.069, because the temperature was being fitted on the
+  same split the checkpoint was selected on. Fixed by making `calibrate.py` validate a fitted
+  temperature on held-out data and fall back to T=1.0 when it does not help. The same guard
+  *accepts* the text model's temperature, which nearly halves its ECE — so it discriminates
+  rather than simply refusing to calibrate.
+- **A silent stub was masquerading as the real model.** `FACE_MODEL_PATH` is relative, so the
+  `os.path.isfile()` pre-check failed whenever the server was started from anywhere but the repo
+  root — and because it failed *before* the `try`, the warning in the `except` never printed. The
+  stub returns a constant `neutral / 0.60` with `available=True`, which is indistinguishable in
+  the UI from a real prediction. Fixed by deleting the pre-check (so failures reach the logging
+  path), resolving config paths against the repo root, and reporting the loaded class in
+  `/health`. **Fail loudly, and make "which model am I actually running" observable.**
+- **`except Exception: return None` hid every runtime failure as "no face."** Decode errors, MPS
+  device errors, and a failed cascade load all surfaced identically to a user simply being out of
+  frame. Fixed by logging the exception before returning.
+- **The Haar detector is not thread-safe.** `/chat` is a sync endpoint, so FastAPI runs it in a
+  threadpool against one shared `CascadeClassifier`. Under 180 concurrent calls this dropped ~4%
+  of faces and returned corrupted boxes for ~5%; serial execution never did. Fixed with a lock
+  around `detectMultiScale` (the torch forward measured clean and is left unlocked).
 
 ---
 
@@ -339,7 +506,7 @@ These are real problems hit during the build — good evidence of engineering ju
 
 ## 15. Testing
 
-- **47 unit tests** (`pytest`, in `tests/`): the label mappings, calibration, fusion strategies
+- **51 unit tests** (`pytest`, in `tests/`): the label mappings, calibration, fusion strategies
   (including conflict detection), the pipeline, the API, and the guardrail backstop. Tests are
   hermetic (forced to the offline template responder + stub models via `conftest.py`).
 - **End-to-end harness** (`scripts/e2e_check.py`): 24 cases against the live server — the seven
@@ -355,9 +522,13 @@ These are real problems hit during the build — good evidence of engineering ju
 backend/        FastAPI app, model interfaces, fusion, responder, pipeline
   emotions.py       the 7-label space
   models/           base contracts, text/face models, fusion, face_net, llm
+    face_detect.py    BlazeFace detection + canonical crop, SHARED with training
   services/         pipeline orchestration
   app.py            FastAPI: /health, /chat, / (HTML UI)
 training/       fine-tuning + data-prep scripts (run on the powerful machine)
+  train_face_resnet.py  the current face model
+  finetune_meld.py      in-domain MELD fine-tuning
+  train_face.py         the superseded from-scratch CNN (kept as the §9 baseline)
 evaluation/     MELD harness, scoring, and saved results
 frontend/       the plain-HTML UI
 web/            the Next.js app (auth + saved chats)
@@ -394,20 +565,52 @@ real replies; Node 20+/pnpm + Neon only for the web app.
 **Done:** both emotion models trained + calibrated; three fusion strategies incl. the learned
 arbiter; the MELD quantitative evaluation (RQ1 + RQ2); the empathetic response layer with the
 reader persona, guardrails, and LLM auto-fallback; the plain-HTML UI; the Next.js web app with
-auth and saved chats; 47 tests + an e2e harness.
+auth and saved chats; 51 tests + an e2e harness.
 
-**Remaining / future work:**
-- **RQ3 user study** — the empathy comparison against a text-only baseline (needs ethics
-  approval; the core remaining academic piece).
-- **In-domain MELD fine-tuning** — to lift the channels and give in-domain (not cross-corpus)
-  RQ1 numbers.
-- Temporal modelling (emotion over a conversation, not per message) and demographic-bias analysis.
+**Remaining / future work, in priority order.** The honest constraint on this project is that the
+**face channel is weak** (macro-F1 0.54 in-domain, ~0.13 on MELD against a 0.14 chance baseline).
+That weakness is what makes RQ1 come out negative, so lifting it is the highest-value work — a
+fusion experiment where one channel is near-chance cannot really answer "does the face help?"
+
+**Done since the first draft of this section** (all measured, see §9 and §13): pretrained
+ResNet-18 backbone (+11.1pp macro-F1 on FER-2013), MediaPipe BlazeFace replacing Haar (detection
+24.7% → 100% on FER thumbnails, 52.7% → 98.7% at 30° head tilt, and 23× faster), colour decoding
+for detection (+22.6pp coverage), the crop-framing fix (+6pp), LR scheduling, FER de-duplication,
+and in-domain MELD fine-tuning. Two items were **investigated and rejected on evidence**: face
+alignment (MediaPipe's landmarker reaches only 40.3% coverage on MELD frames, so aligning training
+data would have re-created the very train/inference mismatch of §13) and promoting the
+MELD-fine-tuned model to production (better on MELD, no fusion benefit, specialised away from the
+webcam deployment domain).
+
+**Remaining, in priority order:**
+
+1. **RQ3 user study** — the empathy comparison against a text-only baseline. Needs ethics
+   approval, and it is now clearly the most valuable remaining work rather than merely the last
+   box to tick: §9 shows the face channel cannot be meaningfully evaluated on MELD, because MELD's
+   utterance-level labels are annotated from audio + text + video and often do not describe what
+   the face is doing. **The user study is the only setting in this project where the face channel
+   is measured in its actual deployment domain** — real, frontal, well-lit webcam faces — and it
+   is what would settle whether the multimodal system is worth the extra channel at all.
+2. **A better face dataset.** FER-2013 is the remaining ceiling: 48×48, grayscale, ~10%
+   mislabelled, and 8% of its test split leaks into train. AffectNet (~420k images, requires an
+   access application) or RAF-DB (~30k, real-world, cleaner labels) would lift the channel far
+   more than further architecture work on FER-2013 can.
+3. **Frame selection over frame count.** The MELD fine-tuning samples three fixed positions per
+   clip. Selecting frames where the speaker is verifiably on camera, or at peak facial motion,
+   would cut label noise at its source. Untested, and the most plausible way to move (D) further.
+4. **Temporal modelling** — emotion over a conversation rather than per message. The `history`
+   field already reaches the backend; nothing consumes it for emotion.
+5. **Demographic-bias analysis.** Face detectors have documented failure modes on darker skin
+   tones. This is **flagged but unmeasured** here — no suitable test set was available — and for a
+   project whose ethics section takes biometric data seriously, it is the most important gap in
+   this list after RQ3.
 
 ---
 
 ## 19. Tech stack summary
 
-- **ML / training:** Python, PyTorch, Hugging Face Transformers, scikit-learn, OpenCV, Pillow.
+- **ML / training:** Python, PyTorch, torchvision (ResNet-18), Hugging Face Transformers,
+  scikit-learn, OpenCV, MediaPipe (BlazeFace), Pillow.
 - **Backend:** FastAPI, uvicorn.
 - **LLM:** Ollama (Qwen2.5-7B) + Google Gemini fallback.
 - **Frontend:** plain HTML/JS; and Next.js 16 + React 19 + Tailwind 4 + shadcn/ui.
