@@ -24,25 +24,34 @@ from backend.schemas import ChatRequest, ChatResponse
 from backend.services.pipeline import EmotionPipeline
 
 
+def _path(p: str) -> str:
+    """Resolve a configured path against the repo root, so runs are cwd-independent."""
+    return str(Path(__file__).resolve().parent.parent / p) if p and not os.path.isabs(p) else p
+
+
 def _load_text_model() -> EmotionModel:
     """Use the fine-tuned DistilBERT if TEXT_MODEL_DIR is set; otherwise the stub."""
-    if settings.text_model_dir and os.path.isdir(settings.text_model_dir):
+    if settings.text_model_dir:
         try:
             from backend.models.text_model import TransformerTextEmotionModel
 
-            return TransformerTextEmotionModel(settings.text_model_dir)
+            return TransformerTextEmotionModel(_path(settings.text_model_dir))
         except Exception as exc:  # missing torch/weights -> stay usable
             print(f"[warn] falling back to stub text model: {exc}")
     return StubTextEmotionModel()
 
 
 def _load_face_model() -> EmotionModel:
-    """Use the trained FER CNN if FACE_MODEL_PATH is set; otherwise the stub."""
-    if settings.face_model_path and os.path.isfile(settings.face_model_path):
+    """Use the trained FER CNN if FACE_MODEL_PATH is set; otherwise the stub.
+
+    No isfile() pre-check: a missing file must reach the `except` and print, or a
+    mis-set path silently serves the stub's constant "neutral 60%" forever.
+    """
+    if settings.face_model_path:
         try:
             from backend.models.face_model import CnnFaceEmotionModel
 
-            return CnnFaceEmotionModel(settings.face_model_path)
+            return CnnFaceEmotionModel(_path(settings.face_model_path))
         except Exception as exc:  # missing torch/cv2/weights -> stay usable
             print(f"[warn] falling back to stub face model: {exc}")
     return StubFaceEmotionModel()
@@ -95,6 +104,8 @@ def create_app() -> FastAPI:
             "fusion": settings.fusion_strategy,
             "llm": type(pipeline.responder).__name__,
             "model": getattr(pipeline.responder, "model", None),
+            "face": type(pipeline.face_model).__name__,  # "Stub..." here means no real face model
+            "text": type(pipeline.text_model).__name__,
         }
 
     @app.post("/chat", response_model=ChatResponse)

@@ -4,7 +4,11 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     message: str
-    frames: list[str] = Field(default_factory=list, description="Base64-encoded webcam frames; empty = text-only")
+    frames: list[str] = Field(
+        default_factory=list,
+        max_length=8,  # the UI sends 3; cap it so a client can't post an unbounded batch
+        description="Base64-encoded webcam frames; empty = text-only",
+    )
     history: list[dict] = Field(default_factory=list, description="Prior turns: [{role, content}, ...]")
 
 

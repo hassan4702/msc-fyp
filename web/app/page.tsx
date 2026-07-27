@@ -147,6 +147,18 @@ export default function Page() {
     return c.toDataURL("image/jpeg", 0.8);
   }
 
+  // One frame is a coin flip: 86% of 3-frame bursts contain more than one label, and a single
+  // frame reports "no face" 8% of the time. The backend already averages whatever it is given.
+  async function burst(n = 3, gapMs = 100): Promise<string[]> {
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const f = frame();
+      if (f) out.push(f);
+      if (i < n - 1) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return out;
+  }
+
   function applyMood(label: string, conf: number) {
     document.body.style.setProperty("--emo", (EMO[label] ?? EMO.neutral).c);
     setMood({ label, conf });
@@ -158,12 +170,12 @@ export default function Page() {
     setBusy(true);
     setInput("");
     setMessages((m) => [...m, { role: "user", content: text }, { role: "bot", content: "…" }]);
-    const f = frame();
+    const frames = await burst();
     try {
       const res = await fetch("/backend/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, frames: f ? [f] : [], history: history.current }),
+        body: JSON.stringify({ message: text, frames, history: history.current }),
       });
       const data: ChatResponse = await res.json();
       setMessages((m) => {

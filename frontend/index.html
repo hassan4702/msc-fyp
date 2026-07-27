@@ -227,6 +227,18 @@
     return grab.toDataURL('image/jpeg', 0.8);
   }
 
+  // One frame is a coin flip: 86% of 3-frame bursts contain more than one label, and a single
+  // frame reports "no face" 8% of the time. The backend already averages whatever it is given.
+  async function burst(n = 3, gapMs = 100) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const f = frame();
+      if (f) out.push(f);
+      if (i < n - 1) await new Promise(r => setTimeout(r, gapMs));
+    }
+    return out;
+  }
+
   let busy = false;
   async function send() {
     const text = ta.value.trim();
@@ -236,11 +248,11 @@
     ta.value = ''; ta.style.height = 'auto';
     const me = addRow('me', `<p>${esc(text)}</p>`);
     const bot = addRow('bot', `<span class="dots"><span></span><span></span><span></span></span>`);
-    const f = frame();
+    const frames = await burst();
     try {
       const res = await fetch('/chat', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message: text, frames: f ? [f] : [], history}),
+        body: JSON.stringify({message: text, frames, history}),
       });
       const r = await res.json();
       bot.querySelector('.bubble').innerHTML = renderBot(r.reply);
