@@ -65,9 +65,12 @@ def _pick_responder() -> Responder:
     if backend == "gemini" and settings.gemini_api_key:
         return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
     if backend in ("auto", "ollama"):
-        model = pick_ollama_model(settings.ollama_url, settings.ollama_model)
+        model = pick_ollama_model(settings.ollama_url, settings.ollama_model, settings.ollama_model_pinned)
         if model:
             return OllamaResponder(model, settings.ollama_url)
+        if settings.ollama_model_pinned:
+            print(f"[warn] OLLAMA_MODEL={settings.ollama_model!r} is not pulled -- "
+                  f"run `ollama pull {settings.ollama_model}`. Falling back to Gemini/template.")
     if backend in ("auto", "gemini") and settings.gemini_api_key:
         return GeminiResponder(settings.gemini_api_key, settings.gemini_model)
     return TemplateResponder()

@@ -203,13 +203,23 @@ def ollama_models(url: str) -> list[str]:
         return []
 
 
-def pick_ollama_model(url: str, preferred: str = "") -> str:
+def pick_ollama_model(url: str, preferred: str = "", pinned: bool = False) -> str:
     """Choose a usable Ollama chat model with zero config: the preferred model if it's
-    pulled, otherwise the first non-embedding model Ollama has. "" if none/unreachable."""
+    pulled, otherwise the first non-embedding model Ollama has. "" if none/unreachable.
+
+    `pinned` means the user named the model themselves (OLLAMA_MODEL is set), so it is
+    honoured exactly or not at all. Without this, asking for qwen3:4b and not having it
+    pulled quietly serves qwen3:8b -- a different, larger model than the one requested,
+    with GET /health the only place the substitution is visible.
+    """
     names = ollama_models(url)
     if not names:
         return ""
     base = preferred.split(":")[0]
+    if pinned:
+        # A bare name ("qwen3") still matches any tag of it; a tagged name must match exactly.
+        exact = [n for n in names if n == preferred or (":" not in preferred and n.split(":")[0] == base)]
+        return exact[0] if exact else ""
     for n in names:  # honour the preferred model if it's installed
         if n == preferred or (base and n.split(":")[0] == base):
             return n

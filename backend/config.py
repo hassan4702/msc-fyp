@@ -27,6 +27,9 @@ _load_dotenv()
 class Settings:
     llm_backend: str = os.environ.get("LLM_BACKEND", "auto")  # auto | ollama | gemini | template
     ollama_model: str = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+    # Set explicitly = pinned: honour it exactly rather than falling back to whatever
+    # same-family model happens to be pulled. Unset keeps the zero-config behaviour.
+    ollama_model_pinned: bool = "OLLAMA_MODEL" in os.environ
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
     gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

@@ -25,3 +25,18 @@ def test_pick_ollama_model(monkeypatch):
     assert llm.pick_ollama_model("x", "") == ""                      # only embedding models
     monkeypatch.setattr(llm, "ollama_models", lambda url: [])
     assert llm.pick_ollama_model("x", "") == ""                      # ollama down
+
+
+def test_pinned_model_is_never_silently_substituted(monkeypatch):
+    """OLLAMA_MODEL set = the user named a model. Serving a different one is a lie.
+
+    The real case: default qwen3:4b with only qwen3:8b pulled. Unpinned, the base-name
+    fallback runs 8b -- larger than the model asked for, visible only in GET /health.
+    """
+    import backend.models.llm as llm
+
+    monkeypatch.setattr(llm, "ollama_models", lambda url: ["qwen3:8b", "llama3:8b"])
+    assert llm.pick_ollama_model("x", "qwen3:4b") == "qwen3:8b"                 # unpinned: substitutes
+    assert llm.pick_ollama_model("x", "qwen3:4b", pinned=True) == ""            # pinned: refuses
+    assert llm.pick_ollama_model("x", "llama3:8b", pinned=True) == "llama3:8b"  # pinned + pulled: exact
+    assert llm.pick_ollama_model("x", "qwen3", pinned=True) == "qwen3:8b"       # bare name -> any tag
