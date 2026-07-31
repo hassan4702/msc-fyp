@@ -35,16 +35,16 @@ def test_face_endpoint_without_frames_is_unavailable():
 
 
 def test_face_endpoint_rejects_oversized_batch():
-    # The ring polls ~1/s; a client must not be able to queue an unbounded batch per poll.
+    # The ring polls on a timer; a client must not be able to queue an unbounded batch per poll.
     r = TestClient(create_app()).post("/face", json={"frames": ["x"] * 9})
     assert r.status_code == 422
 
 
 def test_face_endpoint_never_runs_the_full_pipeline(monkeypatch):
-    """/face must stay LLM-free -- the ring polls it ~1/s, and process() runs a 7B model.
+    """/face must stay LLM-free -- the ring polls it on a timer, and process() runs a 7B model.
 
     Booby-trap process(): if /face ever routes through it, this raises instead of quietly
-    costing a model call per second per client.
+    costing an LLM call on every poll, for every client.
     """
     from backend.services.pipeline import EmotionPipeline
 

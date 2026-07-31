@@ -260,9 +260,9 @@
   // ---- live mood ring -------------------------------------------------------------
   // Polls the face channel only. /chat runs a 7B LLM and cannot be polled; /face exists
   // precisely so this loop stays cheap.
-  // ponytail: fixed 1s cadence, self-throttling if the server is slower than that. If it
-  // still lags on weak hardware, drop the rate rather than adding a worker.
-  const POLL_MS = 1000;
+  // ponytail: fixed 5s cadence, self-throttling if the server is slower than that. 1s was a
+  // ResNet-18 forward pass every second per client for a ring that barely moves that fast.
+  const POLL_MS = 5000;
   let polling = false;
 
   async function pollFace() {
