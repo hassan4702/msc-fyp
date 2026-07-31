@@ -22,17 +22,33 @@ database or Node needed.
 ```bash
 git clone https://github.com/hassan4702/msc-fyp.git
 cd msc-fyp
-# extract the weights you were sent -> creates models/weights/{text,face}
-tar xzf /path/to/msc-fyp-weights.tar.gz -C models
-
-# the face detector's model file (~230 KB, not in the repo and not in the tarball)
-mkdir -p models/weights/mediapipe && curl -sSL -o models/weights/mediapipe/blaze_face_short_range.tflite \
-  https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite
+# extract the weights you were sent, FROM THE REPO ROOT -> creates models/weights/{text,face,mediapipe}
+tar xzf /path/to/msc-fyp-weights.tar.gz
+cp .env.example .env
 ```
 
-Without that `.tflite` the face channel cannot start, and the backend falls back to a placeholder
-model. Check with `curl localhost:8000/health`: `"face"` must read `CnnFaceEmotionModel`, not
-`StubFaceEmotionModel`.
+`tar` ships with Windows 10+, so the same command works in PowerShell or cmd.
+
+The paths matter. `models/weights/mediapipe/blaze_face_short_range.tflite` is hard-coded
+(`backend/models/face_detect.py`) and cannot be moved with an env var — without it the face
+channel refuses to start and the backend serves a placeholder that returns a constant
+"neutral 0.60" forever. Check with `curl localhost:8000/health`: `"face"` must read
+`CnnFaceEmotionModel`, not `StubFaceEmotionModel`.
+
+<details><summary>Building the weights bundle (for whoever is sending it)</summary>
+
+`models/weights` is ~2.6 GB, but 2.3 GB of that is training checkpoints the app never
+loads. Ship only what inference needs — about 280 MB:
+
+```bash
+tar czf ~/msc-fyp-weights.tar.gz \
+  models/weights/mediapipe \
+  models/weights/face/resnet18.pt models/weights/face/calibration.json \
+  models/weights/text/model.safetensors models/weights/text/config.json \
+  models/weights/text/tokenizer.json models/weights/text/tokenizer_config.json \
+  models/weights/text/calibration.json
+```
+</details>
 
 ## One-time setup
 
