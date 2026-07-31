@@ -71,3 +71,37 @@ def test_gemini_network_failure_falls_back_instead_of_raising(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", boom)
     assert llm.GeminiResponder("key").generate("hello", "happy", False)
+
+
+def test_ollama_disables_thinking_and_retries_without_it_on_reject(monkeypatch):
+    """Thinking traces are the difference between a reply and a timeout on slow hardware.
+
+    Measured on qwen3:8b: 406 eval tokens / 13.2s with thinking on, 20 / 0.5s with it off.
+    Older Ollama builds reject the field, so a 400 must retry rather than lose the LLM.
+    """
+    import httpx
+
+    import backend.models.llm as llm
+
+    sent = []
+
+    class Resp:
+        def __init__(self, code):
+            self.status_code = code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError("boom", request=None, response=None)
+
+        def json(self):
+            return {"message": {"content": "I hear you."}}
+
+    def post(url, json=None, timeout=None):
+        sent.append(dict(json))  # snapshot: the caller reuses and mutates the same dict
+        return Resp(400 if len(sent) == 1 else 200)  # first call rejected, retry accepted
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert llm.OllamaResponder("qwen3:4b").generate("hi", "sad", False) == "I hear you."
+    assert sent[0]["think"] is False        # thinking disabled on the first attempt
+    assert "think" not in sent[1]           # dropped on the retry
+    assert sent[0]["options"]["num_predict"] == 512

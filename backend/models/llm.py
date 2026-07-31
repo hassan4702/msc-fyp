@@ -195,12 +195,24 @@ class OllamaResponder(Responder):
         messages = [{"role": "system", "content": build_system_prompt(emotion, conflicted)}]
         messages += history or []
         messages.append({"role": "user", "content": message})
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            # qwen3 and other hybrid reasoning models emit a <think> trace before answering.
+            # Measured on qwen3:8b with this system prompt: 406 eval tokens / 13.2s with it
+            # on, 20 tokens / 0.5s with it off -- for a reply of the same three sentences.
+            # On a CPU-only laptop that gap is the difference between a reply and a timeout.
+            "think": False,
+            "options": {"num_predict": 512},  # a reply is a few sentences; bound the worst case
+        }
         try:
-            resp = httpx.post(
-                f"{self.url}/api/chat",
-                json={"model": self.model, "messages": messages, "stream": False},
-                timeout=settings.llm_timeout,
-            )
+            resp = httpx.post(f"{self.url}/api/chat", json=body, timeout=settings.llm_timeout)
+            if resp.status_code >= 400 and "think" in body:
+                # Older Ollama builds reject the "think" field. Retry without it rather than
+                # lose the LLM entirely -- slower, but a real reply beats the template.
+                body.pop("think")
+                resp = httpx.post(f"{self.url}/api/chat", json=body, timeout=settings.llm_timeout)
             resp.raise_for_status()
             return enforce_guardrails(resp.json()["message"]["content"])
         except Exception as exc:
