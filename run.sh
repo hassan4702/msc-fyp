@@ -6,10 +6,14 @@ cd "$(dirname "$0")"
 if [ ! -x .venv/bin/python ]; then
   echo "[setup] Creating Python environment (first run only)..."
   python3.12 -m venv .venv
-  echo "[setup] Installing dependencies (a few minutes, one time)..."
   .venv/bin/python -m pip install --upgrade pip
-  .venv/bin/python -m pip install -r requirements-run.txt
 fi
+
+# Install every run, not just the first. An existing .venv made before a dependency was
+# added never gets it, and the app degrades silently: a missing torchvision drops the face
+# model to the stub, which returns a constant "neutral 0.60" that looks like a real reading.
+echo "[setup] Checking dependencies..."
+.venv/bin/python -m pip install -q -r requirements-run.txt
 
 export LLM_BACKEND="${LLM_BACKEND:-auto}"
 export TEXT_MODEL_DIR="${TEXT_MODEL_DIR:-models/weights/text}"

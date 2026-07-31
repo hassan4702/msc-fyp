@@ -31,6 +31,9 @@ class Settings:
     # same-family model happens to be pulled. Unset keeps the zero-config behaviour.
     ollama_model_pinned: bool = "OLLAMA_MODEL" in os.environ
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    # Seconds to wait for a reply. Machine-dependent by nature: a 7B model on a CPU-only
+    # laptop can take minutes where an M-series Mac takes seconds.
+    llm_timeout: float = float(os.environ.get("LLM_TIMEOUT", "120"))
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
     gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     text_model_dir: str = os.environ.get("TEXT_MODEL_DIR", "")  # empty -> keyword stub

@@ -40,3 +40,34 @@ def test_pinned_model_is_never_silently_substituted(monkeypatch):
     assert llm.pick_ollama_model("x", "qwen3:4b", pinned=True) == ""            # pinned: refuses
     assert llm.pick_ollama_model("x", "llama3:8b", pinned=True) == "llama3:8b"  # pinned + pulled: exact
     assert llm.pick_ollama_model("x", "qwen3", pinned=True) == "qwen3:8b"       # bare name -> any tag
+
+
+def test_ollama_timeout_falls_back_instead_of_raising(monkeypatch):
+    """A slow model must degrade to the template reply, not 500 the chat turn.
+
+    Real failure on a CPU-only Windows laptop: httpx.ReadTimeout propagated out of
+    pipeline.process and the user got a failed message instead of a slower one.
+    """
+    import httpx
+
+    import backend.models.llm as llm
+
+    def timeout(*a, **kw):
+        raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(httpx, "post", timeout)
+    reply = llm.OllamaResponder("qwen3:4b").generate("i feel awful", "sad", False)
+    assert reply and "sad" in reply          # a real, usable reply came back
+    assert "Traceback" not in reply
+
+
+def test_gemini_network_failure_falls_back_instead_of_raising(monkeypatch):
+    import httpx
+
+    import backend.models.llm as llm
+
+    def boom(*a, **kw):
+        raise httpx.ConnectError("no route to host")
+
+    monkeypatch.setattr(httpx, "post", boom)
+    assert llm.GeminiResponder("key").generate("hello", "happy", False)

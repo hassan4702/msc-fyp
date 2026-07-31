@@ -30,10 +30,15 @@ REM ---- 2. one-time environment setup ----
 if not exist ".venv\Scripts\python.exe" (
   echo  [setup] Creating Python environment ^(first run only^)...
   %PY% -m venv .venv
-  echo  [setup] Installing dependencies ^(a few minutes, one time^)...
   ".venv\Scripts\python.exe" -m pip install --upgrade pip
-  ".venv\Scripts\python.exe" -m pip install -r requirements-run.txt
 )
+
+REM Install every run, not just the first. An existing .venv made before a dependency was
+REM added never gets it, and the app degrades silently: a missing torchvision drops the
+REM face model to the stub, which returns a constant "neutral 0.60" that looks like a real
+REM reading. pip is near-instant when everything is already satisfied.
+echo  [setup] Checking dependencies...
+".venv\Scripts\python.exe" -m pip install -q -r requirements-run.txt
 
 REM ---- 3. config: trained models + auto LLM (Ollama, else Gemini, else template) ----
 set "LLM_BACKEND=auto"

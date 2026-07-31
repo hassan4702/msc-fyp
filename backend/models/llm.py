@@ -9,6 +9,7 @@ swappable backends:
 Privacy: only the emotion LABEL and the user's TEXT ever reach the responder —
 never webcam frames. This matches the GDPR commitments in the risk assessment.
 """
+from backend.config import settings
 from backend.models.base import Responder
 
 READER_PROMPT = """You are a reader. Not a therapist. Not a chatbot. A reader.
@@ -168,6 +169,19 @@ class TemplateResponder(Responder):
         )
 
 
+def _template_fallback(who: str, exc: Exception, emotion: str, conflicted: bool) -> str:
+    """Answer from the offline template instead of 500-ing the chat turn.
+
+    A slow or unreachable model is the same situation as "no LLM installed", just
+    arriving later, so it routes to the same place. Before this, a read timeout took
+    down the whole request with a stack trace: on a CPU-only laptop a 7B model routinely
+    exceeds the timeout, and the user saw a failed message rather than a slower reply.
+    """
+    print(f"[warn] {who} failed ({type(exc).__name__}: {exc}) -- using the offline template reply. "
+          f"Raise LLM_TIMEOUT or pull a smaller model if this repeats.")
+    return TemplateResponder().generate("", emotion, conflicted)
+
+
 class OllamaResponder(Responder):
     """Local LLM via Ollama. Requires the `ollama` service running with the model pulled."""
 
@@ -181,13 +195,16 @@ class OllamaResponder(Responder):
         messages = [{"role": "system", "content": build_system_prompt(emotion, conflicted)}]
         messages += history or []
         messages.append({"role": "user", "content": message})
-        resp = httpx.post(
-            f"{self.url}/api/chat",
-            json={"model": self.model, "messages": messages, "stream": False},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        return enforce_guardrails(resp.json()["message"]["content"])
+        try:
+            resp = httpx.post(
+                f"{self.url}/api/chat",
+                json={"model": self.model, "messages": messages, "stream": False},
+                timeout=settings.llm_timeout,
+            )
+            resp.raise_for_status()
+            return enforce_guardrails(resp.json()["message"]["content"])
+        except Exception as exc:
+            return _template_fallback(f"Ollama ({self.model})", exc, emotion, conflicted)
 
 
 def ollama_models(url: str) -> list[str]:
@@ -252,16 +269,19 @@ class GeminiResponder(Responder):
         ]
         contents.append({"role": "user", "parts": [{"text": message}]})
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-        resp = httpx.post(
-            url,
-            headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
-            json={
-                "systemInstruction": {"parts": [{"text": build_system_prompt(emotion, conflicted)}]},
-                "contents": contents,
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
+        try:
+            resp = httpx.post(
+                url,
+                headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
+                json={
+                    "systemInstruction": {"parts": [{"text": build_system_prompt(emotion, conflicted)}]},
+                    "contents": contents,
+                },
+                timeout=settings.llm_timeout,
+            )
+            resp.raise_for_status()
+        except Exception as exc:  # network down, bad key, rate limit -- same as Ollama timing out
+            return _template_fallback(f"Gemini ({self.model})", exc, emotion, conflicted)
         try:
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError):
