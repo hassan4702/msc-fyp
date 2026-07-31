@@ -70,6 +70,13 @@ class CnnFaceEmotionModel(EmotionModel):
         self.detector = FaceDetector()  # holds its own lock; /chat runs in a threadpool
 
     def _logits_for_frame(self, frame_b64: str) -> list[float] | None:
+        return self._logits_and_box(frame_b64)[0]
+
+    def _logits_and_box(self, frame_b64: str) -> tuple:
+        """(logits, box) for one frame; either may be None when no face is found.
+
+        The box feeds the live preview overlay -- see `predict_with_box`.
+        """
         import numpy as np
 
         from backend.models.face_net import preprocess_resnet
@@ -82,17 +89,28 @@ class CnnFaceEmotionModel(EmotionModel):
             # grayscale. The crop handed to the classifier is grayscale either way.
             img = self._cv2.imdecode(buf, self._cv2.IMREAD_COLOR)
             if img is None:
-                return None
-            crop = self.detector.crop(img)
-            if crop is None:
-                return None
+                return None, None
+            found = self.detector.crop_and_box(img)
+            if found is None:
+                return None, None
+            crop, box = found
             tensor = preprocess_resnet(crop).to(self.device)
             with self._torch.no_grad():
-                return self.model(tensor)[0].tolist()
+                return self.model(tensor)[0].tolist(), box
         except Exception as exc:
             print(f"[warn] face frame dropped: {exc!r}")  # never crash the request, but never hide it
-            return None
+            return None, None
 
     def predict(self, inputs: list | None) -> EmotionPrediction:
         frames = inputs or []
         return aggregate_frame_logits([self._logits_for_frame(f) for f in frames], self.temperature)
+
+    def predict_with_box(self, inputs: list | None) -> tuple:
+        """`predict`, plus the box from the last frame that had a face (None if none did).
+
+        Only /face uses this. The last frame is the freshest one, which is what the live
+        preview should outline; earlier frames in the burst are already stale on screen.
+        """
+        results = [self._logits_and_box(f) for f in (inputs or [])]
+        box = next((b for _, b in reversed(results) if b is not None), None)
+        return aggregate_frame_logits([lg for lg, _ in results], self.temperature), box

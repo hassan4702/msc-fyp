@@ -57,6 +57,8 @@ class FaceDetector:
     def crop(self, image) -> "object | None":
         """Detect the largest face and return its margin-expanded crop, in grayscale.
 
+        Thin wrapper over `crop_and_box` for the callers that only want pixels.
+
         Pass a **BGR colour** frame whenever one is available. BlazeFace is trained on
         colour and loses a lot without it — measured on 300 MELD frames, detection
         coverage is 96.3% on colour input against 73.7% on the same frames converted
@@ -65,6 +67,15 @@ class FaceDetector:
 
         Returns None when no face is found. The crop is clamped to the image, so a face
         at the frame edge yields a smaller — never an empty or wrapped — array.
+        """
+        found = self.crop_and_box(image)
+        return found[0] if found else None
+
+    def crop_and_box(self, image) -> "tuple | None":
+        """`crop`, plus the (x0, y0, x1, y1) box it came from, in image coordinates.
+
+        The box is what the UI draws over the live video so a user can see which face
+        the classifier actually read. Detection still runs exactly once per call.
         """
         import cv2
         import numpy as np
@@ -86,4 +97,4 @@ class FaceDetector:
         y1 = min(h, box.origin_y + box.height + my)
         if x1 <= x0 or y1 <= y0:
             return None
-        return gray[y0:y1, x0:x1]
+        return gray[y0:y1, x0:x1], (x0, y0, x1, y1)

@@ -20,8 +20,8 @@ from backend.models.llm import (
     pick_ollama_model,
 )
 from backend.models.text_model import StubTextEmotionModel
-from backend.schemas import ChatRequest, ChatResponse
-from backend.services.pipeline import EmotionPipeline
+from backend.schemas import ChatRequest, ChatResponse, FaceRequest, FaceResponse
+from backend.services.pipeline import EmotionPipeline, _view
 
 
 def _path(p: str) -> str:
@@ -111,6 +111,19 @@ def create_app() -> FastAPI:
     @app.post("/chat", response_model=ChatResponse)
     def chat(req: ChatRequest):
         return pipeline.process(req.message, req.frames, req.history)
+
+    @app.post("/face", response_model=FaceResponse)
+    def face(req: FaceRequest):
+        """Face channel on its own, for the live mood ring.
+
+        Deliberately skips the text model and the responder: the UI polls this about once
+        a second, and /chat cannot be polled because it runs a 7B LLM per call.
+        """
+        model = pipeline.face_model
+        # The stub has no detector, so no box -- the overlay just stays hidden.
+        predict_with_box = getattr(model, "predict_with_box", None)
+        pred, box = predict_with_box(req.frames) if predict_with_box else (model.predict(req.frames), None)
+        return {"emotion": _view(pred), "box": list(box) if box else None}
 
     return app
 

@@ -38,6 +38,9 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
   header, main, .composer { position: relative; z-index: 2; }
+  /* An author `display` beats the UA's [hidden] rule, so .nocam stayed visible next to the
+     live video. Needed on any element that sets display AND toggles the hidden attribute. */
+  [hidden] { display: none !important; }
 
   header {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -51,10 +54,23 @@
 
   /* mood widget: live webcam + mood ring */
   .mood { display: flex; align-items: center; gap: 12px; }
-  #cam { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; background: #000;
+  .camwrap { position: relative; width: 46px; height: 46px; flex: none;
+    transition: width .35s cubic-bezier(.4,0,.2,1), height .35s cubic-bezier(.4,0,.2,1); }
+  .mood.big .camwrap { width: 150px; height: 150px; }
+  #cam { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: #000; cursor: pointer;
     border: 2px solid color-mix(in srgb, var(--accent) 60%, var(--line)); transition: border-color .9s ease; }
-  .nocam { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center;
+  #cam:hover { border-color: var(--accent); }
+  .nocam { width: 100%; height: 100%; border-radius: 50%; display: flex; align-items: center;
     justify-content: center; font-size: 18px; background: var(--surface); border: 1px solid var(--line); }
+  /* the box the model actually read, drawn over the live video */
+  #facebox { position: absolute; border: 2px solid var(--accent); border-radius: 5px; pointer-events: none;
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent); transition: all .15s linear; }
+  .mood:not(.big) #facebox { display: none; }  /* meaningless at 46px -- only show when enlarged */
+  .cambtn { width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; color: var(--muted-solid);
+    background: var(--surface); border: 1px solid var(--line); transition: all .3s ease; }
+  .cambtn:hover { border-color: var(--accent); color: var(--text); }
+  .cambtn[aria-pressed="false"] { opacity: .55; }
   .ring {
     width: 34px; height: 34px; border-radius: 50%;
     background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 90%, white), var(--accent) 70%);
@@ -101,11 +117,42 @@
     background: var(--surface); border: 1px solid var(--line); color: var(--muted-solid); }
   .chip.fused { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
   .chip.warn { color: #e7a94e; border-color: #e7a94e55; }
+  .chip.why { cursor: pointer; font: inherit; font-size: 11.5px; transition: all .2s ease; }
+  .chip.why:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+  .chip.why:active { transform: scale(.94); }
 
-  /* typing dots */
+  /* fusion explainer: collapsed by default, expands under the chips */
+  .explain { flex-basis: 100%; overflow: hidden; max-height: 0; opacity: 0;
+    transition: max-height .35s cubic-bezier(.4,0,.2,1), opacity .25s ease, margin .35s ease; }
+  .explain.open { max-height: 340px; opacity: 1; margin-top: 8px; }
+  .explain .verdict { margin: 0 0 10px; font-size: 12.5px; color: var(--muted-solid); line-height: 1.5; }
+  .explain .verdict b { color: var(--text); font-weight: 500; }
+  .explain .cols { display: flex; gap: 20px; flex-wrap: wrap; }
+  .explain h5 { margin: 0 0 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted-solid); font-weight: 500; }
+  .brow { display: grid; grid-template-columns: 74px 68px 32px; align-items: center; gap: 7px;
+    font-size: 11px; color: var(--muted-solid); margin-bottom: 3px; }
+  .brow .bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .brow .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px;
+    transition: width .4s cubic-bezier(.4,0,.2,1); }
+  .brow .bpct { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* typing dots: tinted by the current mood and gently bouncing, not just blinking */
   .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%;
-    background: var(--muted-solid); animation: blink 1.2s infinite; }
-  .dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+    background: var(--accent); animation: bounce 1.1s infinite ease-in-out; }
+  .dots span:nth-child(2) { animation-delay: .15s; } .dots span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .35; }
+                      40% { transform: translateY(-4px); opacity: 1; } }
+
+  /* the mood ring reacts to hover and pulses whenever the reading changes */
+  .ring { cursor: default; }
+  .ring:hover { transform: scale(1.08); }
+  .ring.pulse { animation: pulse .6s cubic-bezier(.4,0,.2,1); }
+  @keyframes pulse { 0% { transform: scale(1); } 45% { transform: scale(1.22); } 100% { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    .ring.pulse, .dots span { animation: none; }
+    .camwrap, .explain { transition: none; }
+  }
 
   .composer { padding: 12px 24px 20px; }
   .box { max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px;
@@ -132,7 +179,12 @@
   <header>
     <div class="brand">Empath<span>.</span><small>emotion-aware companion</small></div>
     <div class="mood">
-      <video id="cam" autoplay muted playsinline></video>
+      <div class="camwrap" id="camwrap">
+        <video id="cam" autoplay muted playsinline title="Click to enlarge"></video>
+        <div class="nocam" id="nocam" hidden>📷</div>
+        <div id="facebox" hidden></div>
+      </div>
+      <button id="camBtn" class="cambtn" aria-pressed="true" title="Turn camera off">📷</button>
       <div class="ring" id="ring"></div>
       <div class="lbl"><b id="moodLabel">…</b><span id="moodConf">reading your mood</span></div>
     </div>
@@ -168,10 +220,86 @@
   const moodLabel = document.getElementById('moodLabel'), moodConf = document.getElementById('moodConf');
   const history = [];
 
-  navigator.mediaDevices?.getUserMedia({video: true})
-    .then(s => cam.srcObject = s)
-    .catch(() => cam.replaceWith(Object.assign(document.createElement('div'),
-      {className: 'nocam', textContent: '📷'})));
+  // Camera toggle. "Off" stops the tracks outright, so the camera indicator light goes out --
+  // a user who still sees the light on has no reason to believe the camera is off. Both the
+  // failure path and the off state keep the <video> element alive so the toggle stays usable.
+  const camBtn = document.getElementById('camBtn'), nocam = document.getElementById('nocam');
+  let stream = null, camOn = false;
+
+  function paintCam(on) {
+    cam.hidden = !on; nocam.hidden = on;
+    camBtn.setAttribute('aria-pressed', String(on));
+    camBtn.title = on ? 'Turn camera off' : 'Turn camera on';
+    camBtn.textContent = on ? '📷' : '🚫';
+  }
+
+  async function startCam() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({video: true});
+      cam.srcObject = stream;
+      camOn = true;
+    } catch {
+      stream = null; camOn = false;  // denied / no camera / already in use -> stay off, retryable
+    }
+    paintCam(camOn);
+  }
+
+  function stopCam() {
+    stream?.getTracks().forEach(t => t.stop());
+    stream = null; cam.srcObject = null; camOn = false;
+    document.querySelector('.mood').classList.remove('big');
+    document.getElementById('facebox').hidden = true;
+    moodConf.textContent = 'camera off';
+    paintCam(false);
+  }
+
+  camBtn.onclick = () => (camOn ? stopCam() : startCam());
+  cam.onclick = () => camOn && document.querySelector('.mood').classList.toggle('big');
+  startCam();
+
+  // ---- live mood ring -------------------------------------------------------------
+  // Polls the face channel only. /chat runs a 7B LLM and cannot be polled; /face exists
+  // precisely so this loop stays cheap.
+  // ponytail: fixed 1s cadence, self-throttling if the server is slower than that. If it
+  // still lags on weak hardware, drop the rate rather than adding a worker.
+  const POLL_MS = 1000;
+  let polling = false;
+
+  async function pollFace() {
+    // Skip when there is nothing to read, the tab is hidden, a poll is already out, or a
+    // /chat is mid-flight (its own burst supersedes this and would fight over the ring).
+    if (!camOn || polling || busy || document.hidden) return;
+    const f = frame();
+    if (!f) return;
+    polling = true;
+    try {
+      const r = await fetch('/face', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({frames: [f]}),
+      });
+      const {emotion, box} = await r.json();
+      if (emotion.available) { setMood(emotion.label, emotion.confidence); drawBox(box); }
+      else { moodConf.textContent = 'no face in view'; drawBox(null); }
+    } catch { /* server down or restarting -- the ring simply holds its last value */ }
+    polling = false;
+  }
+  setInterval(pollFace, POLL_MS);
+  document.addEventListener('visibilitychange', () => !document.hidden && pollFace());
+
+  function drawBox(box) {
+    const o = document.getElementById('facebox');
+    if (!box || !cam.videoWidth) { o.hidden = true; return; }
+    const [x0, y0, x1, y1] = box;
+    // object-fit: cover crops the longer axis -- mirror that maths or the box drifts.
+    const scale = Math.max(cam.clientWidth / cam.videoWidth, cam.clientHeight / cam.videoHeight);
+    const ox = (cam.clientWidth - cam.videoWidth * scale) / 2;
+    const oy = (cam.clientHeight - cam.videoHeight * scale) / 2;
+    Object.assign(o.style, {
+      left: `${x0 * scale + ox}px`, top: `${y0 * scale + oy}px`,
+      width: `${(x1 - x0) * scale}px`, height: `${(y1 - y0) * scale}px`,
+    });
+    o.hidden = false;
+  }
 
   const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   function md(t) {
@@ -193,6 +321,12 @@
 
   function setMood(label, conf) {
     const m = EMO[label] || EMO.neutral;
+    // Pulse only when the reading actually changes -- the ring polls every second, and a
+    // pulse on every poll would be a twitch rather than a signal.
+    if (document.body.dataset.emotion !== label) {
+      const ring = document.getElementById('ring');
+      ring.classList.remove('pulse'); void ring.offsetWidth; ring.classList.add('pulse');
+    }
     document.body.style.setProperty('--accent', m.c);
     document.body.dataset.emotion = label;
     moodLabel.textContent = `${m.e} ${label}`;
@@ -216,12 +350,43 @@
       chip('', 'words:', t.label, t.confidence) +
       (fa.available ? chip('', 'face:', fa.label, fa.confidence) : `<span class="chip">👤 no face</span>`) +
       chip('fused', 'fused:', f.label, f.confidence) +
-      (r.conflicted ? `<span class="chip warn">⚠ mixed signals</span>` : '');
+      (r.conflicted ? `<span class="chip warn">⚠ mixed signals</span>` : '') +
+      `<button class="chip why" title="Why this emotion?">why?</button>`;
+    chips.appendChild(explainer(r));
+    chips.querySelector('.why').onclick = e => {
+      const open = chips.querySelector('.explain').classList.toggle('open');
+      e.currentTarget.textContent = open ? 'hide' : 'why?';
+    };
     row.querySelector('.col').appendChild(chips);
   }
 
+  // The fusion is the whole point of the project, so let it be inspected rather than
+  // asserted. Everything here already comes back on /chat -- nothing extra is fetched.
+  function explainer(r) {
+    const t = r.text_emotion, fa = r.face_emotion, f = r.fused_emotion;
+    const bar = p => {
+      const top = Object.entries(p).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      return top.map(([e, v]) =>
+        `<div class="brow"><span>${EMO[e]?.e || ''} ${e}</span>
+           <span class="bar"><i style="width:${Math.round(v * 100)}%"></i></span>
+           <span class="bpct">${pct(v)}</span></div>`).join('');
+    };
+    const verdict = !fa.available
+      ? 'No face was read, so the words decided this on their own.'
+      : r.conflicted
+        ? `Words said <b>${t.label}</b> and the face said <b>${fa.label}</b>. They disagreed, so the arbiter weighed confidence and chose <b>${f.label}</b>.`
+        : `Words and face agreed closely enough, giving <b>${f.label}</b>.`;
+    const d = document.createElement('div'); d.className = 'explain';
+    d.innerHTML =
+      `<p class="verdict">${verdict}</p>` +
+      `<div class="cols"><div><h5>words</h5>${bar(t.probabilities)}</div>` +
+      (fa.available ? `<div><h5>face</h5>${bar(fa.probabilities)}</div>` : '') +
+      `<div><h5>fused</h5>${bar(f.probabilities)}</div></div>`;
+    return d;
+  }
+
   function frame() {
-    if (!cam.videoWidth) return null;
+    if (!camOn || !cam.videoWidth) return null;  // camera off -> frames:[] -> backend reports "no face"
     grab.width = cam.videoWidth; grab.height = cam.videoHeight;
     grab.getContext('2d').drawImage(cam, 0, 0);
     return grab.toDataURL('image/jpeg', 0.8);

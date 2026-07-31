@@ -25,3 +25,14 @@ class ChatResponse(BaseModel):
     fused_emotion: EmotionView
     text_emotion: EmotionView
     face_emotion: EmotionView
+
+
+class FaceRequest(BaseModel):
+    frames: list[str] = Field(default_factory=list, max_length=4, description="Base64 webcam frames")
+
+
+class FaceResponse(BaseModel):
+    """Face channel only. Polled ~1/s by the live mood ring, so it must stay LLM-free."""
+
+    emotion: EmotionView
+    box: list[int] | None = Field(default=None, description="[x0,y0,x1,y1] of the read face, in frame pixels")
