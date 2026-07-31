@@ -182,12 +182,56 @@ def _template_fallback(who: str, exc: Exception, emotion: str, conflicted: bool)
     return TemplateResponder().generate("", emotion, conflicted)
 
 
+# Keep the model resident between turns. Ollama unloads after 5 minutes by default, and
+# reloading a multi-GB model from disk is paid by whoever sends the next message.
+KEEP_ALIVE = "30m"
+
+
 class OllamaResponder(Responder):
     """Local LLM via Ollama. Requires the `ollama` service running with the model pulled."""
 
     def __init__(self, model: str = "mistral", url: str = "http://localhost:11434"):
         self.model = model
         self.url = url
+
+    def warm(self) -> None:
+        """Load the model and cache the system prompt before the user's first message.
+
+        The system prompt is ~1580 tokens of which HARD_RULES + READER_PROMPT is a constant
+        prefix; only the short emotion tail varies per turn. Measured: that prefix costs
+        2.5s of prompt_eval on an M-series GPU and 0.0s once cached. On a CPU-only laptop
+        the cold pass -- model load from disk plus that first prompt_eval -- is what pushed
+        the FIRST reply past the timeout while every later reply was fine.
+
+        Fire-and-forget on a daemon thread: startup must not block, and a failure here is
+        not worth reporting because the real request will report it properly.
+        """
+        import threading
+
+        def _go():
+            import httpx
+
+            try:
+                httpx.post(
+                    f"{self.url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": build_system_prompt("neutral", False)},
+                            {"role": "user", "content": "hi"},
+                        ],
+                        "stream": False, "think": False, "keep_alive": KEEP_ALIVE,
+                        "options": {"num_predict": 1},  # we want the prompt cached, not a reply
+                    },
+                    # Nobody is waiting on this, so give it far longer than a real request.
+                    # Inheriting llm_timeout would time out exactly on the slow machines that
+                    # need warming most, leaving the first message to pay the cold cost anyway.
+                    timeout=max(settings.llm_timeout, 900),
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=_go, daemon=True).start()
 
     def generate(self, message: str, emotion: str, conflicted: bool, history=None) -> str:
         import httpx
@@ -204,6 +248,7 @@ class OllamaResponder(Responder):
             # on, 20 tokens / 0.5s with it off -- for a reply of the same three sentences.
             # On a CPU-only laptop that gap is the difference between a reply and a timeout.
             "think": False,
+            "keep_alive": KEEP_ALIVE,
             "options": {"num_predict": 512},  # a reply is a few sentences; bound the worst case
         }
         try:

@@ -92,6 +92,11 @@ def build_pipeline() -> EmotionPipeline:
 def create_app() -> FastAPI:
     app = FastAPI(title="Multimodal Emotion-Aware Chatbot", version="0.1.0")
     pipeline = build_pipeline()
+    # Pay the model load + system-prompt eval now, in the background, instead of charging it
+    # to whoever sends the first message. On a CPU-only laptop that cold pass alone exceeded
+    # the request timeout, while every subsequent reply was fine.
+    if isinstance(pipeline.responder, OllamaResponder):
+        pipeline.responder.warm()
 
     @app.get("/")
     def index():
