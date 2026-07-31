@@ -44,6 +44,13 @@ ollama pull qwen2.5:7b
 
 ---
 
+## Quickest: the launcher script
+
+macOS/Linux: `./run.sh`   —   Windows: double-click `run.bat`
+
+Both do Option A automatically: create the Python environment on first run, install
+deps, point at the trained weights, and open the chatbot at http://localhost:8000.
+
 ## Windows: just double-click `run.bat`
 
 On Windows, `run.bat` does Option A automatically: it creates the Python
