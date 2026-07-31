@@ -26,7 +26,7 @@ _load_dotenv()
 @dataclass
 class Settings:
     llm_backend: str = os.environ.get("LLM_BACKEND", "auto")  # auto | ollama | gemini | template
-    ollama_model: str = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+    ollama_model: str = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
     gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

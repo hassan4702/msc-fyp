@@ -39,7 +39,7 @@ model. Check with `curl localhost:8000/health`: `"face"` must read `CnnFaceEmoti
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-run.txt
-ollama pull qwen2.5:7b
+ollama pull qwen3:4b
 ```
 
 ---

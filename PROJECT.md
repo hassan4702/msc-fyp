@@ -546,7 +546,7 @@ models/weights/ trained weights (git-ignored — sent separately)
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-run.txt
-ollama pull qwen2.5:7b            # optional; else it falls back to Gemini/template
+ollama pull qwen3:4b            # optional; else it falls back to Gemini/template
 LLM_BACKEND=auto uvicorn backend.app:app
 # open http://localhost:8000
 ```
